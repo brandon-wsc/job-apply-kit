@@ -51,6 +51,7 @@
 |---|---|
 | Run the workflow | Dify service API: `POST {DIFY_BASE_URL}/workflows/run` with an app API key (`app-…`), inputs as strings, `response_mode: blocking` or `streaming` |
 | Define the workflow | Manual once: Studio → Import DSL → `job-to-cv.yml`, then Publish |
+| Automate setup (unofficial) | Dify has no public build-plane API, but the web console's internal `/console/api` is scriptable: `POST /console/api/login` (password is Base64-encoded) → cookies + `X-CSRF-TOKEN` header → `POST /console/api/apps/imports` (`{mode: "yaml-content", yaml_content, app_id?}`) → `POST /console/api/apps/{id}/workflows/publish` → `POST /console/api/apps/{id}/api-keys`. Used to bootstrap this repo's workflow; brittle across versions. |
 | Secrets | `.env` for infra keys; app API key per published app |
 | Future CLI/MCP | Thin client over the service API — **deferred, not implemented** |
 
