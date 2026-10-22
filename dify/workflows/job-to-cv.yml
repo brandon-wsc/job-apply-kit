@@ -69,6 +69,18 @@ workflow:
       id: e-extract-evidence
       source: extract_reqs
       sourceHandle: source
+      target: parse_reqs
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: e-parsereqs-evidence
+      source: parse_reqs
+      sourceHandle: source
       target: select_evidence
       targetHandle: target
       type: custom
@@ -77,9 +89,21 @@ workflow:
         isInIteration: false
         isInLoop: false
         sourceType: llm
+        targetType: code
+      id: e-evidence-parse
+      source: select_evidence
+      sourceHandle: source
+      target: parse_evidence
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
         targetType: llm
       id: e-evidence-cv
-      source: select_evidence
+      source: parse_evidence
       sourceHandle: source
       target: draft_cv
       targetHandle: target
@@ -88,10 +112,10 @@ workflow:
     - data:
         isInIteration: false
         isInLoop: false
-        sourceType: llm
+        sourceType: code
         targetType: llm
       id: e-evidence-cl
-      source: select_evidence
+      source: parse_evidence
       sourceHandle: source
       target: draft_cl
       targetHandle: target
@@ -333,7 +357,7 @@ workflow:
         - role: user
           text: 'Requirements JSON:
 
-            {{#extract_reqs.text#}}
+            {{#parse_reqs.requirements_json#}}
 
             Redacted candidate profile:
 
@@ -379,11 +403,11 @@ workflow:
         - role: user
           text: 'Requirements:
 
-            {{#extract_reqs.text#}}
+            {{#parse_reqs.requirements_json#}}
 
             Evidence:
 
-            {{#select_evidence.text#}}
+            {{#parse_evidence.evidence_json#}}
 
             Redacted profile (skills / education / target / prefs):
 
@@ -436,7 +460,7 @@ workflow:
 
             Evidence:
 
-            {{#select_evidence.text#}}
+            {{#parse_evidence.evidence_json#}}
 
             Candidate prefs (tone, max words, never_claim):
 
@@ -568,7 +592,7 @@ workflow:
 
             Evidence selected for this application:
 
-            {{#select_evidence.text#}}
+            {{#parse_evidence.evidence_json#}}
 
             Produce: 1. The 8 most likely interview questions (mix technical and behavioural).
             2. For each, a STAR-format answer sketch using ONLY the evidence above
@@ -687,6 +711,88 @@ workflow:
       positionAbsolute:
         x: 2668
         y: 402
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(text: str) -> dict:\n    import json\n    t = (text or \"\"\
+          ).strip()\n    if t.startswith(\"```\"):\n        t = t.split(\"\\n\", 1)[1]\
+          \ if \"\\n\" in t else t\n        if t.rstrip().endswith(\"```\"):\n   \
+          \         t = t.rstrip()[:-3]\n    start = t.find(\"{\")\n    end = t.rfind(\"\
+          }\")\n    obj = None\n    if 0 <= start < end:\n        try:\n         \
+          \   obj = json.loads(t[start:end + 1])\n        except Exception:\n    \
+          \        obj = None\n    ok = \"true\" if obj is not None else \"false\"\
+          \n    out = json.dumps(obj, indent=2) if obj is not None else t\n    return\
+          \ {\"requirements_json\": out, \"ok\": ok}"
+        code_language: python3
+        desc: Strip code fences + json.loads LLM output. On parse failure passes the
+          raw text through (ok=false) instead of failing the run.
+        outputs:
+          ok:
+            children: null
+            type: string
+          requirements_json:
+            children: null
+            type: string
+        selected: false
+        title: Parse Requirements JSON
+        type: code
+        variables:
+        - value_selector:
+          - extract_reqs
+          - text
+          variable: text
+      height: 88
+      id: parse_reqs
+      position:
+        x: 624
+        y: 130
+      positionAbsolute:
+        x: 624
+        y: 130
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(text: str) -> dict:\n    import json\n    t = (text or \"\"\
+          ).strip()\n    if t.startswith(\"```\"):\n        t = t.split(\"\\n\", 1)[1]\
+          \ if \"\\n\" in t else t\n        if t.rstrip().endswith(\"```\"):\n   \
+          \         t = t.rstrip()[:-3]\n    start = t.find(\"{\")\n    end = t.rfind(\"\
+          }\")\n    obj = None\n    if 0 <= start < end:\n        try:\n         \
+          \   obj = json.loads(t[start:end + 1])\n        except Exception:\n    \
+          \        obj = None\n    ok = \"true\" if obj is not None else \"false\"\
+          \n    out = json.dumps(obj, indent=2) if obj is not None else t\n    return\
+          \ {\"evidence_json\": out, \"ok\": ok}"
+        code_language: python3
+        desc: Strip code fences + json.loads LLM output. On parse failure passes the
+          raw text through (ok=false) instead of failing the run.
+        outputs:
+          evidence_json:
+            children: null
+            type: string
+          ok:
+            children: null
+            type: string
+        selected: false
+        title: Parse Evidence JSON
+        type: code
+        variables:
+        - value_selector:
+          - select_evidence
+          - text
+          variable: text
+      height: 88
+      id: parse_evidence
+      position:
+        x: 1208
+        y: 540
+      positionAbsolute:
+        x: 1208
+        y: 540
       selected: false
       sourcePosition: right
       targetPosition: left
