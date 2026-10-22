@@ -16,6 +16,7 @@ version and merges real PII back in a Code node after generation. See `README.md
 |------|------|
 | `dify/workflows/job-to-cv.yml` | Real exported DSL — importable in Dify Studio |
 | `dify/workflows/job-to-cv.yml.example` | Annotated spec stub for readers; intentionally not valid YAML (`var?` annotations) |
+| `mcp/` | MCP server (Python, `mcp` SDK 2.x) — thin client over the Dify service API; SSOT is read server-side so tools take only the job ad |
 | `examples/` | Fictional job ad + SSOT, PII-safe |
 | `docs/` | Architecture notes |
 | `.env.example` | Template only — no real values |

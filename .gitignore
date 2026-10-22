@@ -12,6 +12,14 @@ ssot.local.json
 **/ssot.*.json
 !**/ssot.example.json
 
+# Generated documents contain merged PII — never commit
+out/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
 # Real exported workflow may embed app metadata — review before committing
 dify/workflows/job-to-cv.local.yml
 

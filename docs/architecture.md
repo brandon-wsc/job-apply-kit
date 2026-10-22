@@ -59,7 +59,7 @@
 | Define the workflow | Manual once: Studio → Import DSL → `job-to-cv.yml`, then Publish |
 | Automate setup (unofficial) | Dify has no public build-plane API, but the web console's internal `/console/api` is scriptable: `POST /console/api/login` (password is Base64-encoded) → cookies + `X-CSRF-TOKEN` header → `POST /console/api/apps/imports` (`{mode: "yaml-content", yaml_content, app_id?}`) → `POST /console/api/apps/{id}/workflows/publish` → `POST /console/api/apps/{id}/api-keys`. Used to bootstrap this repo's workflow; brittle across versions. **Never commit admin credentials or login scripts containing them to the repo** — keep them local-only (e.g. `.env`, which is gitignored). |
 | Secrets | `.env` for infra keys; app API key per published app |
-| Future CLI/MCP | Thin client over the service API — **deferred, not implemented** |
+| MCP server | `mcp/server.py` — thin client over the service API. Tools take only `job_ad`; the SSOT is loaded from `SSOT_PATH` server-side and outputs are written to `OUTPUT_DIR` (paths returned, never contents), so PII stays out of the host agent's context too |
 
 ## Local deployment (reference)
 

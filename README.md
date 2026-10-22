@@ -67,6 +67,13 @@ provider in raw form.
 5. **Try the examples** — `examples/job-ad.md` + `examples/ssot.example.json`
    (fake identity only) are ready to paste in.
 
+### Optional: drive it via MCP
+
+`mcp/server.py` wraps the service API so an agent only ever sends the job ad —
+your real SSOT (incl. PII) is read from a local path server-side, and generated
+documents are written to disk rather than returned through the agent context.
+Setup and host config: `mcp/README.md`.
+
 ## What is NOT included
 
 - No real résumés, identities, or career data — the example SSOT is fictional.
@@ -80,8 +87,8 @@ provider in raw form.
 
 - [x] Export real `dify/workflows/job-to-cv.yml` from Dify (built + verified
       end-to-end via `/v1/workflows/run` on Dify 1.17)
-- [ ] MCP server / CLI to drive the workflow via the Dify service API —
-      **deferred, not implemented yet**
+- [x] MCP server to drive the workflow via the Dify service API — see
+      `mcp/` (tool surface takes only the job ad; SSOT is injected server-side)
 
 ## License
 
