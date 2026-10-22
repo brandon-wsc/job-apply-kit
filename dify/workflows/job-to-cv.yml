@@ -1,0 +1,801 @@
+app:
+  description: Job ad → tailored CV + cover letter (+ optional interview prep). The
+    candidate SSOT is redacted by a Code node before any LLM call; real PII is merged
+    back by Code nodes after generation.
+  icon: 📄
+  icon_background: '#E4FBCC'
+  icon_type: emoji
+  mode: workflow
+  name: job-to-cv
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openrouter:0.1.10@7a135133ebe75fce9b816f7805b3e62d72db9dc47d7046bf03e8a84afd2324a2
+    version: null
+kind: app
+version: 0.7.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload: {}
+    opening_statement: ''
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: code
+      id: e-start-redact
+      source: start
+      sourceHandle: source
+      target: redact
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: e-redact-extract
+      source: redact
+      sourceHandle: source
+      target: extract_reqs
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: llm
+      id: e-extract-evidence
+      source: extract_reqs
+      sourceHandle: source
+      target: parse_reqs
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: e-parsereqs-evidence
+      source: parse_reqs
+      sourceHandle: source
+      target: select_evidence
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: e-evidence-parse
+      source: select_evidence
+      sourceHandle: source
+      target: parse_evidence
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: e-evidence-cv
+      source: parse_evidence
+      sourceHandle: source
+      target: draft_cv
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: llm
+      id: e-evidence-cl
+      source: parse_evidence
+      sourceHandle: source
+      target: draft_cl
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: e-cv-merge
+      source: draft_cv
+      sourceHandle: source
+      target: merge_pii
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: e-cl-merge
+      source: draft_cl
+      sourceHandle: source
+      target: merge_pii
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: if-else
+      id: e-merge-check
+      source: merge_pii
+      sourceHandle: source
+      target: check_prep
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: llm
+      id: e-check-prep-yes
+      source: check_prep
+      sourceHandle: 'true'
+      target: interview_prep
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: code
+      id: e-prep-mergeprep
+      source: interview_prep
+      sourceHandle: source
+      target: merge_pii_prep
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: end
+      id: e-mergeprep-end
+      source: merge_pii_prep
+      sourceHandle: source
+      target: end_full
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: if-else
+        targetType: end
+      id: e-check-prep-no
+      source: check_prep
+      sourceHandle: 'false'
+      target: end_pair
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: User Input
+        type: start
+        variables:
+        - default: ''
+          hint: Paste the full job ad text
+          label: job_ad
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: job_ad
+        - default: ''
+          hint: Full candidate SSOT JSON (see examples/ssot.example.json). PII is
+            stripped by the Redact node before any LLM call.
+          label: ssot_json
+          options: []
+          placeholder: ''
+          required: true
+          type: paragraph
+          variable: ssot_json
+        - default: 'no'
+          hint: ''
+          label: prep_interview
+          options:
+          - 'no'
+          - 'yes'
+          placeholder: ''
+          required: true
+          type: select
+          variable: prep_interview
+      height: 176
+      id: start
+      position:
+        x: 40
+        y: 282
+      positionAbsolute:
+        x: 40
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\n\ndef main(ssot_json: str) -> dict:\n    ssot = json.loads(ssot_json)\n\
+          \    identity = ssot.get(\"identity\") or {}\n    pii = identity.pop(\"\
+          pii\", {}) or {}\n    links = pii.get(\"links\") or {}\n    pii_map = {}\n\
+          \    for token, val in {\n        \"{{NAME}}\": pii.get(\"full_name\"),\n\
+          \        \"{{EMAIL}}\": pii.get(\"email\"),\n        \"{{PHONE}}\": pii.get(\"\
+          phone\"),\n        \"{{LOCATION}}\": pii.get(\"location\"),\n        \"\
+          {{LINKEDIN}}\": links.get(\"linkedin\"),\n        \"{{GITHUB}}\": links.get(\"\
+          github\"),\n        \"{{PORTFOLIO}}\": links.get(\"portfolio\"),\n    }.items():\n\
+          \        if val:\n            pii_map[token] = val\n    identity[\"pii_placeholders\"\
+          ] = sorted(pii_map.keys())\n    return {\n        \"redacted_ssot\": json.dumps(ssot,\
+          \ indent=2),\n        \"pii_map\": json.dumps(pii_map),\n    }"
+        code_language: python3
+        desc: Strip identity.pii into pii_map; LLMs only see redacted_ssot. pii_map
+          must never be referenced in an LLM prompt.
+        outputs:
+          pii_map:
+            children: null
+            type: string
+          redacted_ssot:
+            children: null
+            type: string
+        selected: false
+        title: Redact SSOT
+        type: code
+        variables:
+        - value_selector:
+          - start
+          - ssot_json
+          variable: ssot_json
+      height: 88
+      id: redact
+      position:
+        x: 332
+        y: 282
+      positionAbsolute:
+        x: 332
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.2
+          mode: chat
+          name: deepseek/deepseek-chat
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - role: system
+          text: You extract structured requirements from job ads. Output ONLY valid
+            JSON, no prose, no code fences.
+        - role: user
+          text: 'Job ad:
+
+            {{#start.job_ad#}}
+
+            Return a JSON object with keys: "role_title" (string), "company" (string),
+            "seniority" (string), "must_have" (array of strings), "nice_to_have" (array
+            of strings), "keywords" (array of strings).'
+        selected: false
+        title: Extract Requirements
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 88
+      id: extract_reqs
+      position:
+        x: 624
+        y: 282
+      positionAbsolute:
+        x: 624
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.2
+          mode: chat
+          name: deepseek/deepseek-chat
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - role: system
+          text: You select resume evidence that best matches job requirements. Output
+            ONLY valid JSON. Use ONLY facts present in the provided profile — never
+            invent experience, metrics, or claims. Respect the profile's prefs.never_claim
+            list.
+        - role: user
+          text: 'Requirements JSON:
+
+            {{#parse_reqs.requirements_json#}}
+
+            Redacted candidate profile:
+
+            {{#redact.redacted_ssot#}}
+
+            Return a JSON object with keys: "picked_bullets" (array of {"source_id","text","matches"}),
+            "picked_projects" (array of {"id","name","why"}), "skill_focus" (array
+            of strings), "gaps" (array of strings — requirements with no evidence).'
+        selected: false
+        title: Select Evidence
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 88
+      id: select_evidence
+      position:
+        x: 916
+        y: 282
+      positionAbsolute:
+        x: 916
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.4
+          mode: chat
+          name: deepseek/deepseek-chat
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - role: system
+          text: You write tight, honest CVs in Markdown. Output ONLY the CV document
+            — no commentary, no code fences.
+        - role: user
+          text: 'Requirements:
+
+            {{#parse_reqs.requirements_json#}}
+
+            Evidence:
+
+            {{#parse_evidence.evidence_json#}}
+
+            Redacted profile (skills / education / target / prefs):
+
+            {{#redact.redacted_ssot#}}
+
+            Rules: - Markdown, fits on one page. - In the header use the literal placeholder
+            tokens listed in identity.pii_placeholders (e.g. the token for name, email,
+            phone, location, links). Write them verbatim — do NOT invent real values.
+            - Use only facts present in the evidence and profile. Never invent metrics,
+            employers, or claims. Respect prefs.never_claim. - Order bullets by strength
+            of match to the requirements.'
+        selected: false
+        title: Draft CV
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 88
+      id: draft_cv
+      position:
+        x: 1208
+        y: 162
+      positionAbsolute:
+        x: 1208
+        y: 162
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.4
+          mode: chat
+          name: deepseek/deepseek-chat
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - role: system
+          text: You write direct, specific cover letters. Output ONLY the letter text
+            — no commentary.
+        - role: user
+          text: 'Job ad:
+
+            {{#start.job_ad#}}
+
+            Evidence:
+
+            {{#parse_evidence.evidence_json#}}
+
+            Candidate prefs (tone, max words, never_claim):
+
+            {{#redact.redacted_ssot#}}
+
+            Rules: - At most 250 words, direct tone unless prefs say otherwise. -
+            Address it to the company/role from the job ad. - In the signature block
+            use the literal placeholder tokens listed in identity.pii_placeholders.
+            Write them verbatim — do NOT invent real values. - Only claim things supported
+            by the evidence. Respect prefs.never_claim.'
+        selected: false
+        title: Draft Cover Letter
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 88
+      id: draft_cl
+      position:
+        x: 1208
+        y: 402
+      positionAbsolute:
+        x: 1208
+        y: 402
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\n\ndef main(cv_draft: str, letter_draft: str, pii_map:\
+          \ str) -> dict:\n    mapping = json.loads(pii_map or \"{}\")\n    cv = cv_draft\n\
+          \    letter = letter_draft\n    for token, real in mapping.items():\n  \
+          \      cv = cv.replace(token, real)\n        letter = letter.replace(token,\
+          \ real)\n    return {\n        \"cv_md\": cv,\n        \"cover_letter_md\"\
+          : letter,\n    }"
+        code_language: python3
+        desc: Merge real PII back into CV + cover letter. Runs on every path, before
+          the prep branch.
+        outputs:
+          cover_letter_md:
+            children: null
+            type: string
+          cv_md:
+            children: null
+            type: string
+        selected: false
+        title: Merge PII
+        type: code
+        variables:
+        - value_selector:
+          - draft_cv
+          - text
+          variable: cv_draft
+        - value_selector:
+          - draft_cl
+          - text
+          variable: letter_draft
+        - value_selector:
+          - redact
+          - pii_map
+          variable: pii_map
+      height: 88
+      id: merge_pii
+      position:
+        x: 1500
+        y: 282
+      positionAbsolute:
+        x: 1500
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        _targetBranches:
+        - id: 'true'
+          name: IF
+        - id: 'false'
+          name: ELSE
+        cases:
+        - case_id: 'true'
+          conditions:
+          - comparison_operator: is
+            id: cond_prep
+            value: 'yes'
+            variable_selector:
+            - start
+            - prep_interview
+          id: case_prep
+          logical_operator: and
+        desc: ''
+        logical_operator: and
+        selected: false
+        title: Interview prep?
+        type: if-else
+      height: 126
+      id: check_prep
+      position:
+        x: 1792
+        y: 282
+      positionAbsolute:
+        x: 1792
+        y: 282
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0.4
+          mode: chat
+          name: deepseek/deepseek-chat
+          provider: langgenius/openrouter/openrouter
+        prompt_template:
+        - role: system
+          text: You prepare candidates for interviews. Output ONLY Markdown.
+        - role: user
+          text: 'Job ad:
+
+            {{#start.job_ad#}}
+
+            Evidence selected for this application:
+
+            {{#parse_evidence.evidence_json#}}
+
+            Produce: 1. The 8 most likely interview questions (mix technical and behavioural).
+            2. For each, a STAR-format answer sketch using ONLY the evidence above
+            — never invent stories. 3. Three questions the candidate should ask the
+            interviewer.'
+        selected: false
+        title: Interview Prep
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 88
+      id: interview_prep
+      position:
+        x: 2084
+        y: 162
+      positionAbsolute:
+        x: 2084
+        y: 162
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\n\ndef main(prep_draft: str, pii_map: str) -> dict:\n \
+          \   mapping = json.loads(pii_map or \"{}\")\n    prep = prep_draft\n   \
+          \ for token, real in mapping.items():\n        prep = prep.replace(token,\
+          \ real)\n    return {\"interview_prep_md\": prep}"
+        code_language: python3
+        desc: Merge real PII back into the interview prep notes (prep branch only).
+        outputs:
+          interview_prep_md:
+            children: null
+            type: string
+        selected: false
+        title: Merge PII (prep)
+        type: code
+        variables:
+        - value_selector:
+          - interview_prep
+          - text
+          variable: prep_draft
+        - value_selector:
+          - redact
+          - pii_map
+          variable: pii_map
+      height: 88
+      id: merge_pii_prep
+      position:
+        x: 2376
+        y: 162
+      positionAbsolute:
+        x: 2376
+        y: 162
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - merge_pii
+          - cv_md
+          value_type: string
+          variable: cv_md
+        - value_selector:
+          - merge_pii
+          - cover_letter_md
+          value_type: string
+          variable: cover_letter_md
+        - value_selector:
+          - merge_pii_prep
+          - interview_prep_md
+          value_type: string
+          variable: interview_prep_md
+        selected: false
+        title: Outputs (with prep)
+        type: end
+      height: 116
+      id: end_full
+      position:
+        x: 2668
+        y: 162
+      positionAbsolute:
+        x: 2668
+        y: 162
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - merge_pii
+          - cv_md
+          value_type: string
+          variable: cv_md
+        - value_selector:
+          - merge_pii
+          - cover_letter_md
+          value_type: string
+          variable: cover_letter_md
+        selected: false
+        title: Outputs
+        type: end
+      height: 88
+      id: end_pair
+      position:
+        x: 2668
+        y: 402
+      positionAbsolute:
+        x: 2668
+        y: 402
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(text: str) -> dict:\n    import json\n    t = (text or \"\"\
+          ).strip()\n    if t.startswith(\"```\"):\n        t = t.split(\"\\n\", 1)[1]\
+          \ if \"\\n\" in t else t\n        if t.rstrip().endswith(\"```\"):\n   \
+          \         t = t.rstrip()[:-3]\n    start = t.find(\"{\")\n    end = t.rfind(\"\
+          }\")\n    obj = None\n    if 0 <= start < end:\n        try:\n         \
+          \   obj = json.loads(t[start:end + 1])\n        except Exception:\n    \
+          \        obj = None\n    ok = \"true\" if obj is not None else \"false\"\
+          \n    out = json.dumps(obj, indent=2) if obj is not None else t\n    return\
+          \ {\"requirements_json\": out, \"ok\": ok}"
+        code_language: python3
+        desc: Strip code fences + json.loads LLM output. On parse failure passes the
+          raw text through (ok=false) instead of failing the run.
+        outputs:
+          ok:
+            children: null
+            type: string
+          requirements_json:
+            children: null
+            type: string
+        selected: false
+        title: Parse Requirements JSON
+        type: code
+        variables:
+        - value_selector:
+          - extract_reqs
+          - text
+          variable: text
+      height: 88
+      id: parse_reqs
+      position:
+        x: 624
+        y: 130
+      positionAbsolute:
+        x: 624
+        y: 130
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "def main(text: str) -> dict:\n    import json\n    t = (text or \"\"\
+          ).strip()\n    if t.startswith(\"```\"):\n        t = t.split(\"\\n\", 1)[1]\
+          \ if \"\\n\" in t else t\n        if t.rstrip().endswith(\"```\"):\n   \
+          \         t = t.rstrip()[:-3]\n    start = t.find(\"{\")\n    end = t.rfind(\"\
+          }\")\n    obj = None\n    if 0 <= start < end:\n        try:\n         \
+          \   obj = json.loads(t[start:end + 1])\n        except Exception:\n    \
+          \        obj = None\n    ok = \"true\" if obj is not None else \"false\"\
+          \n    out = json.dumps(obj, indent=2) if obj is not None else t\n    return\
+          \ {\"evidence_json\": out, \"ok\": ok}"
+        code_language: python3
+        desc: Strip code fences + json.loads LLM output. On parse failure passes the
+          raw text through (ok=false) instead of failing the run.
+        outputs:
+          evidence_json:
+            children: null
+            type: string
+          ok:
+            children: null
+            type: string
+        selected: false
+        title: Parse Evidence JSON
+        type: code
+        variables:
+        - value_selector:
+          - select_evidence
+          - text
+          variable: text
+      height: 88
+      id: parse_evidence
+      position:
+        x: 1208
+        y: 540
+      positionAbsolute:
+        x: 1208
+        y: 540
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+  rag_pipeline_variables: []

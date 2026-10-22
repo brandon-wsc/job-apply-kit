@@ -14,8 +14,12 @@ provider in raw form.
 - Docker + Docker Compose
 - [Dify](https://github.com/langgenius/dify) self-hosted (tested against Dify 1.x
   `docker compose` deployment)
-- An LLM provider API key (OpenAI by default; Azure OpenAI and other providers
-  supported via Dify model provider settings)
+- An LLM provider — the shipped DSL uses **OpenRouter**
+  (`langgenius/openrouter/openrouter` plugin) with `deepseek/deepseek-chat` as
+  the default model. Install the OpenRouter plugin (or swap `model.provider`
+  in the DSL / Studio) and add your key under *Settings → Model Provider*.
+  OpenRouter region-gates some providers (e.g. Anthropic, OpenAI, Google) in
+  certain countries — pick a model that routes for you.
 
 ## Quick start
 
@@ -30,14 +34,14 @@ provider in raw form.
 
    Then open `http://localhost/install` and create the admin account.
 
-2. **Configure a model provider** — Dify console → *Settings → Model Provider* →
-   add your OpenAI (or Azure OpenAI) key. Keys live in Dify's provider settings
-   or `.env`, never in the workflow definition.
+2. **Configure a model provider** — Dify console → *Settings → Model Provider*.
+   The DSL expects the OpenRouter plugin; keys live in Dify's provider settings,
+   never in the workflow definition.
 
-3. **Import the workflow DSL** — Studio → *Create from DSL*. The real exported DSL
-   will live at `dify/workflows/job-to-cv.yml`. Until it does,
-   `dify/workflows/job-to-cv.yml.example` documents the intended nodes and
-   variable names so you can build it by hand.
+3. **Import the workflow DSL** — Studio → *Create from DSL* → pick
+   `dify/workflows/job-to-cv.yml` (a real exported workflow). The sibling
+   `job-to-cv.yml.example` file documents the node/variable design for readers
+   who want to build it by hand.
 
 4. **Publish the app and create an API key** — the workflow can then be driven
    via the Dify service API:
@@ -49,13 +53,16 @@ provider in raw form.
      -d '{
        "inputs": {
          "job_ad": "<contents of examples/job-ad.md>",
-         "redacted_ssot": "<contents of examples/ssot.example.json, redacted>",
-         "prep_interview": "true"
+         "ssot_json": "<contents of examples/ssot.example.json>",
+         "prep_interview": "yes"
        },
        "response_mode": "blocking",
        "user": "local"
      }'
    ```
+
+   `ssot_json` is the **full** profile — the workflow's `redact` Code node strips
+   `identity.pii` before any LLM call and merges it back afterwards.
 
 5. **Try the examples** — `examples/job-ad.md` + `examples/ssot.example.json`
    (fake identity only) are ready to paste in.
@@ -66,12 +73,13 @@ provider in raw form.
 - No API keys or secrets — `.env.example` is a template only.
 - No production SSOT service — wire your own storage (file, DB, or API) behind
   the fetch/redact step.
-- No exported Dify DSL yet — `job-to-cv.yml.example` is a spec stub, not an
-  importable workflow.
+- `job-to-cv.yml.example` is a spec stub for documentation; the importable DSL
+  is `job-to-cv.yml`.
 
 ## Roadmap
 
-- [ ] Export real `dify/workflows/job-to-cv.yml` from Dify once built in the UI
+- [x] Export real `dify/workflows/job-to-cv.yml` from Dify (built + verified
+      end-to-end via `/v1/workflows/run` on Dify 1.17)
 - [ ] MCP server / CLI to drive the workflow via the Dify service API —
       **deferred, not implemented yet**
 

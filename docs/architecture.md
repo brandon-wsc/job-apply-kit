@@ -12,10 +12,10 @@
           │     │                         │ pii_map (stays in-workflow)  │      │
           │     │                         ▼                            │      │
           │     │   ┌───────────────────────────────────────────────────────┐  │
-          │     │   │                 inside the LLM                        │  │
-          │     └──▶│  extract JD reqs ─▶ select evidence ─▶ draft CV       │◀─┘
-          │         │                                    ─▶ draft cover     │
-          │         │                                    ─▶ (opt) prep      │
+          │     │   │       inside the LLM (LLM nodes only; the parse      │  │
+          │     └──▶│       steps are Code nodes, not model calls)          │◀─┘
+          │         │  extract JD reqs ─▶ parse ─▶ select evidence ─▶       │
+          │         │  parse ─▶ draft CV ─▶ draft cover ─▶ (opt) prep       │
           │         └───────────────────────────┬───────────────────────────┘
           │                                     ▼
           │         ┌───────────────────────────────────────────┐
@@ -40,6 +40,12 @@
    *after* generation. `pii_map` is an intermediate workflow variable and must
    never be referenced in an LLM prompt.
 
+4. **LLM JSON is parsed, not trusted.** `extract_reqs` and `select_evidence`
+   each feed a Code node that strips code fences and `json.loads`es the output
+   into normalized JSON. On parse failure the raw text passes through
+   (`ok=false`) rather than failing the run — downstream prompts stay usable
+   and the failure is observable.
+
 4. **Keys live in env / provider settings only.** `SECRET_KEY`, `OPENAI_API_KEY`
    (or Azure), and `SSOT_API_TOKEN` come from `.env` or Dify → Settings →
    Model Provider. Nothing secret is baked into the DSL — an exported
@@ -51,6 +57,7 @@
 |---|---|
 | Run the workflow | Dify service API: `POST {DIFY_BASE_URL}/workflows/run` with an app API key (`app-…`), inputs as strings, `response_mode: blocking` or `streaming` |
 | Define the workflow | Manual once: Studio → Import DSL → `job-to-cv.yml`, then Publish |
+| Automate setup (unofficial) | Dify has no public build-plane API, but the web console's internal `/console/api` is scriptable: `POST /console/api/login` (password is Base64-encoded) → cookies + `X-CSRF-TOKEN` header → `POST /console/api/apps/imports` (`{mode: "yaml-content", yaml_content, app_id?}`) → `POST /console/api/apps/{id}/workflows/publish` → `POST /console/api/apps/{id}/api-keys`. Used to bootstrap this repo's workflow; brittle across versions. **Never commit admin credentials or login scripts containing them to the repo** — keep them local-only (e.g. `.env`, which is gitignored). |
 | Secrets | `.env` for infra keys; app API key per published app |
 | Future CLI/MCP | Thin client over the service API — **deferred, not implemented** |
 

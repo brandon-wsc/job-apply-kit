@@ -39,13 +39,24 @@ nodes:
   - id: extract_requirements   # LLM node
     type: llm
     in: [job_ad]
-    out: requirements_json    # { must_have[], nice_to_have[], keywords[], seniority }
+    out: text                 # raw LLM output (should be JSON)
+
+  - id: parse_reqs             # Code node — LLM JSON is parsed, not trusted
+    type: code
+    in: [extract_requirements.text]
+    out: { requirements_json, ok }   # strip ``` fences + json.loads;
+                                     #   ok=false → raw passthrough
 
   - id: select_evidence        # LLM node
     type: llm
     in: [requirements_json, redacted_ssot]
-    out: evidence_json        # picked bullets/projects ranked vs requirements;
+    out: text                 # picked bullets/projects ranked vs requirements;
                               #   must respect prefs.never_claim
+
+  - id: parse_evidence         # Code node — same fence-strip + json.loads
+    type: code
+    in: [select_evidence.text]
+    out: { evidence_json, ok }
 
   - id: draft_cv               # LLM node
     type: llm
