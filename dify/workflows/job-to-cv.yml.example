@@ -1,0 +1,82 @@
+# ════════════════════════════════════════════════════════════════════════
+# job-to-cv.yml.example — SPEC STUB, not an importable Dify DSL
+# ════════════════════════════════════════════════════════════════════════
+#
+# This file documents the intended workflow so it can be built in the Dify
+# Studio UI (or written once a real DSL is exported). When the workflow is
+# built, export it via Studio → ⋯ → Export DSL and replace the sibling file
+# `job-to-cv.yml`. Dify will NOT import this .example file.
+#
+# Dify version targeted: 1.x (workflow app type)
+# ════════════════════════════════════════════════════════════════════════
+
+meta:
+  name: job-to-cv
+  type: workflow          # Dify "Workflow" app, not Chatflow
+  version: 0.1-draft
+
+# ── Inputs (Start node variables) ────────────────────────────────────────
+inputs:
+  job_ad:                 # string, required — raw job ad text (see examples/job-ad.md)
+  redacted_ssot:          # string(JSON), required if no SSOT fetch step —
+                        #   profile with PII already stripped (see examples/ssot.example.json)
+  ssot_id:                # string, optional — lookup key if fetching SSOT via HTTP node
+  prep_interview:         # boolean, optional, default false — also emit interview prep
+
+# ── Nodes (intended, in order) ───────────────────────────────────────────
+nodes:
+  - id: fetch_ssot        # optional HTTP Request node
+    type: http-request    # GET $SSOT_BASE_URL/ssot/{ssot_id} w/ Bearer $SSOT_API_TOKEN
+    out: raw_ssot
+    note: skip if caller passes redacted_ssot directly
+
+  - id: redact_profile    # Code node (python)
+    type: code
+    in: [raw_ssot | redacted_ssot]
+    out: { redacted_ssot, pii_map }   # pii_map: {"{{NAME}}": "Real Name", ...}
+    note: strip identity.pii → placeholder tokens; keep pii_map for merge step
+
+  - id: extract_requirements   # LLM node
+    type: llm
+    in: [job_ad]
+    out: requirements_json    # { must_have[], nice_to_have[], keywords[], seniority }
+
+  - id: select_evidence        # LLM node
+    type: llm
+    in: [requirements_json, redacted_ssot]
+    out: evidence_json        # picked bullets/projects ranked vs requirements;
+                              #   must respect prefs.never_claim
+
+  - id: draft_cv               # LLM node
+    type: llm
+    in: [evidence_json, redacted_ssot]
+    out: cv_md                # markdown, PII placeholders intact
+
+  - id: draft_cover_letter     # LLM node
+    type: llm
+    in: [evidence_json, job_ad, redacted_ssot]
+    out: cover_letter_md
+
+  - id: interview_prep         # IF/ELSE branch on prep_interview == true
+    type: llm
+    in: [job_ad, evidence_json, redacted_ssot]
+    out: interview_prep_md    # likely questions + STAR answers from evidence
+
+  - id: merge_pii              # Code node (python) — runs AFTER all LLM nodes
+    type: code
+    in: [cv_md, cover_letter_md, interview_prep_md?, pii_map]
+    out: [cv_md, cover_letter_md, interview_prep_md]
+    note: placeholder → real PII substitution happens here, inside Dify,
+          not in any model context
+
+# ── Outputs (End node) ───────────────────────────────────────────────────
+outputs:
+  cv_md:              # string
+  cover_letter_md:    # string
+  interview_prep_md:  # string | absent unless prep_interview
+
+# ── Notes ────────────────────────────────────────────────────────────────
+# * The LLM only ever sees `redacted_ssot` — never raw PII, never the pii_map.
+# * `pii_map` must be carried as an intermediate variable only; do NOT pass it
+#   into any LLM node's prompt/context.
+# * No Knowledge/retrieval nodes: nothing here is embedded into a vector store.

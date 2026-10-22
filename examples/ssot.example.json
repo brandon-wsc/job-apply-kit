@@ -1,0 +1,87 @@
+{
+  "_comment": "FAKE identity for development only. Replace with your own SSOT served from private storage — never commit real data. Fields under `identity.pii` are redacted before the LLM sees the profile and merged back after generation.",
+  "schema_version": "0.1",
+  "identity": {
+    "id": "cand_demo_001",
+    "pii": {
+      "full_name": "Alex Demo",
+      "email": "alex.demo@example.com",
+      "phone": "+1-555-0100",
+      "location": "Toronto, ON",
+      "links": {
+        "linkedin": "https://linkedin.com/in/alex-demo",
+        "github": "https://github.com/alex-demo",
+        "portfolio": "https://alexdemo.example.com"
+      }
+    },
+    "public": {
+      "first_name_initial": "A.",
+      "years_experience": 6,
+      "headline": "Software engineer — platform & applied AI"
+    }
+  },
+  "target": {
+    "roles": ["forward deployed engineer", "platform engineer", "applied AI engineer"],
+    "seniority": "senior",
+    "locations": ["Toronto", "remote"],
+    "work_auth": "authorized without sponsorship"
+  },
+  "experience": [
+    {
+      "id": "exp_1",
+      "company": "Northwind Systems (fictional)",
+      "title": "Senior Platform Engineer",
+      "start": "2022-03",
+      "end": null,
+      "bullets": [
+        "Built internal developer platform serving 40+ engineers; cut deploy time from 45min to 8min",
+        "Designed event-driven ingestion pipeline processing ~2M events/day on Kafka + Postgres",
+        "Led migration of legacy monolith jobs to containerized workers on Kubernetes"
+      ],
+      "tags": ["platform", "kubernetes", "kafka", "developer-experience"]
+    },
+    {
+      "id": "exp_2",
+      "company": "Acme Analytics (fictional)",
+      "title": "Software Engineer",
+      "start": "2019-06",
+      "end": "2022-02",
+      "bullets": [
+        "Shipped customer-facing reporting API used by 300+ enterprise accounts",
+        "Reduced p95 query latency 60% via materialized views and query planner tuning",
+        "Prototyped LLM-assisted report summarization (early GPT-3 integration)"
+      ],
+      "tags": ["api", "postgres", "performance", "llm"]
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj_1",
+      "name": "job-apply-kit",
+      "url": "https://github.com/example/job-apply-kit",
+      "summary": "Self-hosted Dify workflow: job ad → tailored CV + cover letter with PII-safe SSOT design",
+      "tags": ["dify", "llm", "workflow"]
+    }
+  ],
+  "skills": {
+    "languages": ["Python", "TypeScript", "Go", "SQL"],
+    "frameworks": ["FastAPI", "React", "Temporal"],
+    "infra": ["Kubernetes", "Docker", "Terraform", "AWS", "Postgres", "Kafka"],
+    "ai": ["LLM orchestration", "RAG", "eval harnesses", "Dify"]
+  },
+  "education": [
+    {
+      "school": "University of Example (fictional)",
+      "degree": "BSc Computer Science",
+      "end": "2019"
+    }
+  ],
+  "prefs": {
+    "cv_format": "markdown",
+    "cv_max_pages": 1,
+    "tone": "direct",
+    "cover_letter_max_words": 250,
+    "never_claim": ["management experience", "security clearance"],
+    "emphasize": ["platform", "llm", "customer-facing"]
+  }
+}

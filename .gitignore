@@ -1,0 +1,21 @@
+# Env & secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+
+# Real SSOT — never commit personal data
+ssot.json
+ssot.local.json
+**/ssot.*.json
+!**/ssot.example.json
+
+# Real exported workflow may embed app metadata — review before committing
+dify/workflows/job-to-cv.local.yml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
