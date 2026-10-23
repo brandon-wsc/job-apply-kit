@@ -6,8 +6,8 @@
                 ┌─────────────────────── outside the LLM ───────────────────────┐
                 │                                                               │
  job ad ──┐     │   ┌──────────┐   ┌──────────────┐   ┌───────────────┐         │
- (input)  │     │   │  fetch   │──▶│   redact     │──▶│  redacted     │──┐      │
-          │     │   │  SSOT    │   │  (Code node) │   │  ssot         │  │      │
+ (input)  │     │   │ ssot_json│──▶│   redact     │──▶│  redacted     │──┐      │
+          │     │   │(PII-free)│   │  (Code node) │   │  ssot         │  │      │
           │     │   └──────────┘   └──────┬───────┘   └───────────────┘  │      │
           │     │                         │ pii_map (stays in-workflow)  │      │
           │     │                         ▼                            │      │
@@ -19,7 +19,8 @@
           │         └───────────────────────────┬───────────────────────────┘
           │                                     ▼
           │         ┌───────────────────────────────────────────┐
-          │         │  Code node: merge PII back via pii_map    │
+ PII_JSON │────────▶│  Code node: merge PII back                │
+ (env var)│         │  (env.PII_JSON ?? pii_map)                │
           │         └───────────────────────────┬───────────────┘
           ▼                                     ▼
         outputs:  cv_md · cover_letter_md · interview_prep_md?
@@ -27,18 +28,20 @@
 
 ## Design rules
 
-1. **SSOT lives outside the LLM.** The candidate profile is fetched from private
-   storage (file/DB/API) or passed in pre-redacted. The model only ever sees
-   `redacted_ssot`.
+1. **SSOT lives outside the LLM.** The candidate profile is passed PII-free via
+   `ssot_json` (or fetched from private storage). Contact PII lives in the
+   `PII_JSON` app env var; the model only ever sees `redacted_ssot`.
 
 2. **PII never enters Knowledge or a vector store.** The workflow uses **no
    retrieval/Knowledge nodes** — no embedding, no indexing of profile data.
    Vector stores would leak PII into embeddings you can't cleanly revoke.
 
-3. **Redaction → generation → merge.** A Code node strips PII into a `pii_map`
-   *before* any LLM node; a second Code node substitutes real values back
-   *after* generation. `pii_map` is an intermediate workflow variable and must
-   never be referenced in an LLM prompt.
+3. **Redaction → generation → merge.** The canonical PII store is the
+   `PII_JSON` app env var (secret) — keeping PII out of `ssot_json` also keeps
+   it out of Dify's run history. A Code node still strips inline `identity.pii`
+   into a `pii_map` *before* any LLM node (guard for stray PII); a second Code
+   node substitutes real values back *after* generation (`PII_JSON` ?? `pii_map`).
+   Neither `pii_map` nor `PII_JSON` may be referenced in an LLM prompt.
 
 4. **LLM JSON is parsed, not trusted.** `extract_reqs` and `select_evidence`
    each feed a Code node that strips code fences and `json.loads`es the output
@@ -59,7 +62,7 @@
 | Define the workflow | Manual once: Studio → Import DSL → `job-to-cv.yml`, then Publish |
 | Automate setup (unofficial) | Dify has no public build-plane API, but the web console's internal `/console/api` is scriptable: `POST /console/api/login` (password is Base64-encoded) → cookies + `X-CSRF-TOKEN` header → `POST /console/api/apps/imports` (`{mode: "yaml-content", yaml_content, app_id?}`) → `POST /console/api/apps/{id}/workflows/publish` → `POST /console/api/apps/{id}/api-keys`. Used to bootstrap this repo's workflow; brittle across versions. **Never commit admin credentials or login scripts containing them to the repo** — keep them local-only (e.g. `.env`, which is gitignored). |
 | Secrets | `.env` for infra keys; app API key per published app |
-| MCP server | `mcp/server.py` — thin client over the service API. Tools take only `job_ad`; the SSOT is loaded from `SSOT_PATH` server-side and outputs are written to `OUTPUT_DIR` (paths returned, never contents), so PII stays out of the host agent's context too. This boundary is agent-context only — the full `ssot_json` is still sent to Dify |
+| MCP server | `mcp/server.py` — thin client over the service API. Tools take only `job_ad`; the PII-free SSOT is loaded from `SSOT_PATH` server-side and outputs are written to `OUTPUT_DIR` (paths returned, never contents), so PII stays out of the host agent's context too. `check_ssot` reports `pii_source` (`inline` vs `env:PII_JSON`) |
 
 ## Local deployment (reference)
 
