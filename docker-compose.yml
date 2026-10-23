@@ -1,14 +1,19 @@
 # Self-contained Dify 1.17.1 stack — single-file Docker Compose deployment.
 # Generated from langgenius/dify docker/docker-compose.yaml: all config files
-# (nginx, squid, sandbox) are inlined as `configs`, data lives in named
-# volumes. No .env file or sibling directories required.
+# (nginx, squid, sandbox) are embedded base64 in `environment` and decoded by
+# each service's entrypoint, data lives in named volumes. No .env file or
+# sibling directories required — a single paste works anywhere, including
+# Synology Container Manager (no `configs:` feature needed).
 #
 # Before `docker compose up -d` / pasting into a compose UI (e.g. Synology
 # Container Manager -> Project), review:
-#   1. SECRET_KEY — replace CHANGE_ME_TO_A_LONG_RANDOM_STRING (appears in
-#      api/worker/api_websocket/worker_beat) with `openssl rand -base64 42`.
-#   2. nginx ports — published as 8080:80 and 8443:443 so they don't clash
+#   1. nginx ports — published as 8080:80 and 8443:443 so they don't clash
 #      with a host web server; change `published` if 80/443 are free.
+#
+# SECRET_KEY is auto-generated once by the one-shot `init-secret` service
+# into the `secret_key` volume and injected at container start — nothing to
+# edit. Rotate it with `docker compose down && docker volume rm
+# dify_secret_key && docker compose up -d` (invalidates all sessions).
 #
 # Needs ~8 GB free RAM (api OOMs during migrations under ~4 GB) and x86_64.
 # Optional services removed vs upstream: certbot, agent stack, alternative
@@ -29,6 +34,8 @@ services:
       redis:
         condition: service_started
         required: true
+      init-assets:
+        condition: service_completed_successfully
     environment:
       AGENT_BACKEND_API_TOKEN: dify-agent-run-token-for-dev-only
       AGENT_BACKEND_BASE_URL: http://agent_backend:5050
@@ -227,7 +234,7 @@ services:
       SANDBOX_HTTPS_PROXY: http://ssrf_proxy:3128
       SANDBOX_PORT: '8194'
       SANDBOX_WORKER_TIMEOUT: '15'
-      SECRET_KEY: CHANGE_ME_TO_A_LONG_RANDOM_STRING
+      SECRET_KEY: managed-by-init-secret
       SENTRY_DSN: ''
       SENTRY_PROFILES_SAMPLE_RATE: '1.0'
       SENTRY_TRACES_SAMPLE_RATE: '1.0'
@@ -303,6 +310,15 @@ services:
       source: app_storage
       target: /app/api/storage
       volume: {}
+    - type: volume
+      source: secret_key
+      target: /keys
+      read_only: true
+      volume: &id001 {}
+    entrypoint:
+    - /bin/sh
+    - -c
+    - export SECRET_KEY=$$(cat /keys/secret); exec /bin/bash /entrypoint.sh
   api_websocket:
     depends_on:
       db_postgres:
@@ -311,6 +327,8 @@ services:
       redis:
         condition: service_started
         required: true
+      init-assets:
+        condition: service_completed_successfully
     environment:
       AGENT_BACKEND_BASE_URL: http://agent_backend:5050
       ALLOW_EMBED: 'false'
@@ -504,7 +522,7 @@ services:
       SANDBOX_HTTPS_PROXY: http://ssrf_proxy:3128
       SANDBOX_PORT: '8194'
       SANDBOX_WORKER_TIMEOUT: '15'
-      SECRET_KEY: CHANGE_ME_TO_A_LONG_RANDOM_STRING
+      SECRET_KEY: managed-by-init-secret
       SERVER_CONSOLE_API_URL: http://api:5001
       SERVER_WORKER_AMOUNT: '1'
       SERVER_WORKER_CLASS: geventwebsocket.gunicorn.workers.GeventWebSocketWorker
@@ -567,6 +585,15 @@ services:
       source: app_storage
       target: /app/api/storage
       volume: {}
+    - type: volume
+      source: secret_key
+      target: /keys
+      read_only: true
+      volume: *id001
+    entrypoint:
+    - /bin/sh
+    - -c
+    - export SECRET_KEY=$$(cat /keys/secret); exec /bin/bash /entrypoint.sh
   db_postgres:
     command:
     - postgres
@@ -620,9 +647,11 @@ services:
         condition: service_started
         required: true
     entrypoint:
-    - sh
+    - /bin/sh
     - -c
-    - "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh"
+    - printf %s "$$DIFY_CONF_NGINX_B64" | base64 -d > /etc/nginx/nginx.conf.template && printf %s "$$DIFY_CONF_PROXY_B64" | base64 -d > /etc/nginx/proxy.conf.template && printf %s "$$DIFY_CONF_HTTPS_B64"
+      | base64 -d > /etc/nginx/https.conf.template && printf %s "$$DIFY_CONF_DEFAULT_B64" | base64 -d > /etc/nginx/conf.d/default.conf.template && printf %s "$$DIFY_CONF_NGINX_EP_B64" | base64 -d > /docker-entrypoint-mount.sh
+      && cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && exec /docker-entrypoint.sh
     environment:
       CERTBOT_DOMAIN: ''
       NGINX_CLIENT_MAX_BODY_SIZE: 100M
@@ -639,6 +668,11 @@ services:
       NGINX_SSL_PORT: '443'
       NGINX_SSL_PROTOCOLS: TLSv1.2 TLSv1.3
       NGINX_WORKER_PROCESSES: auto
+      DIFY_CONF_NGINX_B64: IyBQbGVhc2UgZG8gbm90IGRpcmVjdGx5IGVkaXQgdGhpcyBmaWxlLiBJbnN0ZWFkLCBtb2RpZnkgdGhlIC5lbnYgdmFyaWFibGVzIHJlbGF0ZWQgdG8gTkdJTlggY29uZmlndXJhdGlvbi4KCnVzZXIgIG5naW54Owp3b3JrZXJfcHJvY2Vzc2VzICAke05HSU5YX1dPUktFUl9QUk9DRVNTRVN9OwoKZXJyb3JfbG9nICAvdmFyL2xvZy9uZ2lueC9lcnJvci5sb2cgbm90aWNlOwpwaWQgICAgICAgIC92YXIvcnVuL25naW54LnBpZDsKCgpldmVudHMgewogICAgd29ya2VyX2Nvbm5lY3Rpb25zICAxMDI0Owp9CgoKaHR0cCB7CiAgICBpbmNsdWRlICAgICAgIC9ldGMvbmdpbngvbWltZS50eXBlczsKICAgIGRlZmF1bHRfdHlwZSAgYXBwbGljYXRpb24vb2N0ZXQtc3RyZWFtOwoKICAgIGxvZ19mb3JtYXQgIG1haW4gICckcmVtb3RlX2FkZHIgLSAkcmVtb3RlX3VzZXIgWyR0aW1lX2xvY2FsXSAiJHJlcXVlc3QiICcKICAgICAgICAgICAgICAgICAgICAgICckc3RhdHVzICRib2R5X2J5dGVzX3NlbnQgIiRodHRwX3JlZmVyZXIiICcKICAgICAgICAgICAgICAgICAgICAgICciJGh0dHBfdXNlcl9hZ2VudCIgIiRodHRwX3hfZm9yd2FyZGVkX2ZvciInOwoKICAgIGFjY2Vzc19sb2cgIC92YXIvbG9nL25naW54L2FjY2Vzcy5sb2cgIG1haW47CgogICAgc2VuZGZpbGUgICAgICAgIG9uOwogICAgI3RjcF9ub3B1c2ggICAgIG9uOwoKICAgIGtlZXBhbGl2ZV90aW1lb3V0ICAke05HSU5YX0tFRVBBTElWRV9USU1FT1VUfTsKCiAgICAjZ3ppcCAgb247CiAgICBjbGllbnRfbWF4X2JvZHlfc2l6ZSAke05HSU5YX0NMSUVOVF9NQVhfQk9EWV9TSVpFfTsKCiAgICBpbmNsdWRlIC9ldGMvbmdpbngvY29uZi5kLyouY29uZjsKfQo=
+      DIFY_CONF_PROXY_B64: IyBQbGVhc2UgZG8gbm90IGRpcmVjdGx5IGVkaXQgdGhpcyBmaWxlLiBJbnN0ZWFkLCBtb2RpZnkgdGhlIC5lbnYgdmFyaWFibGVzIHJlbGF0ZWQgdG8gTkdJTlggY29uZmlndXJhdGlvbi4KCnByb3h5X3NldF9oZWFkZXIgSG9zdCAkaG9zdDsKIyByZWFsX2lwIGNvbmZpZ3VyYXRpb24gbXVzdCB2YWxpZGF0ZSB1cHN0cmVhbSBwcm94aWVzIGJlZm9yZSByZXBsYWNpbmcgJHJlbW90ZV9hZGRyLgpwcm94eV9zZXRfaGVhZGVyIFgtRm9yd2FyZGVkLUZvciAkcmVtb3RlX2FkZHI7CnByb3h5X3NldF9oZWFkZXIgWC1Gb3J3YXJkZWQtUHJvdG8gJHNjaGVtZTsKcHJveHlfc2V0X2hlYWRlciBYLUZvcndhcmRlZC1Qb3J0ICRzZXJ2ZXJfcG9ydDsKcHJveHlfaHR0cF92ZXJzaW9uIDEuMTsKcHJveHlfc2V0X2hlYWRlciBDb25uZWN0aW9uICIiOwpwcm94eV9idWZmZXJpbmcgb2ZmOwpwcm94eV9yZWFkX3RpbWVvdXQgJHtOR0lOWF9QUk9YWV9SRUFEX1RJTUVPVVR9Owpwcm94eV9zZW5kX3RpbWVvdXQgJHtOR0lOWF9QUk9YWV9TRU5EX1RJTUVPVVR9Owo=
+      DIFY_CONF_HTTPS_B64: IyBQbGVhc2UgZG8gbm90IGRpcmVjdGx5IGVkaXQgdGhpcyBmaWxlLiBJbnN0ZWFkLCBtb2RpZnkgdGhlIC5lbnYgdmFyaWFibGVzIHJlbGF0ZWQgdG8gTkdJTlggY29uZmlndXJhdGlvbi4KCmxpc3RlbiAke05HSU5YX1NTTF9QT1JUfSBzc2w7CnNzbF9jZXJ0aWZpY2F0ZSAke1NTTF9DRVJUSUZJQ0FURV9QQVRIfTsKc3NsX2NlcnRpZmljYXRlX2tleSAke1NTTF9DRVJUSUZJQ0FURV9LRVlfUEFUSH07CnNzbF9wcm90b2NvbHMgJHtOR0lOWF9TU0xfUFJPVE9DT0xTfTsKc3NsX3ByZWZlcl9zZXJ2ZXJfY2lwaGVycyBvbjsKc3NsX3Nlc3Npb25fY2FjaGUgc2hhcmVkOlNTTDoxMG07CnNzbF9zZXNzaW9uX3RpbWVvdXQgMTBtOwo=
+      DIFY_CONF_DEFAULT_B64: IyBQbGVhc2UgZG8gbm90IGRpcmVjdGx5IGVkaXQgdGhpcyBmaWxlLiBJbnN0ZWFkLCBtb2RpZnkgdGhlIC5lbnYgdmFyaWFibGVzIHJlbGF0ZWQgdG8gTkdJTlggY29uZmlndXJhdGlvbi4KCnNlcnZlciB7CiAgICBsaXN0ZW4gJHtOR0lOWF9QT1JUfTsKICAgIHNlcnZlcl9uYW1lICR7TkdJTlhfU0VSVkVSX05BTUV9OwogICAgcmVzb2x2ZXIgMTI3LjAuMC4xMSB2YWxpZD0zMHMgaXB2Nj1vZmY7CgogICAgbG9jYXRpb24gL2NvbnNvbGUvYXBpIHsKICAgICAgc2V0ICRhcGlfdXBzdHJlYW0gYXBpOjUwMDE7CiAgICAgIHByb3h5X3Bhc3MgaHR0cDovLyRhcGlfdXBzdHJlYW07CiAgICAgIGluY2x1ZGUgcHJveHkuY29uZjsKICAgIH0KCiAgICBsb2NhdGlvbiAvYXBpIHsKICAgICAgc2V0ICRhcGlfdXBzdHJlYW0gYXBpOjUwMDE7CiAgICAgIHByb3h5X3Bhc3MgaHR0cDovLyRhcGlfdXBzdHJlYW07CiAgICAgIGluY2x1ZGUgcHJveHkuY29uZjsKICAgIH0KCiAgICBsb2NhdGlvbiAvc29ja2V0LmlvLyB7CiAgICAgIHNldCAkc29ja2V0X2lvX3Vwc3RyZWFtICR7TkdJTlhfU09DS0VUX0lPX1VQU1RSRUFNfTsKICAgICAgcHJveHlfcGFzcyBodHRwOi8vJHNvY2tldF9pb191cHN0cmVhbTsKICAgICAgaW5jbHVkZSBwcm94eS5jb25mOwogICAgICBwcm94eV9zZXRfaGVhZGVyIFVwZ3JhZGUgJGh0dHBfdXBncmFkZTsKICAgICAgcHJveHlfc2V0X2hlYWRlciBDb25uZWN0aW9uICJ1cGdyYWRlIjsKICAgICAgcHJveHlfY2FjaGVfYnlwYXNzICRodHRwX3VwZ3JhZGU7CiAgICB9CgogICAgbG9jYXRpb24gL3YxIHsKICAgICAgc2V0ICRhcGlfdXBzdHJlYW0gYXBpOjUwMDE7CiAgICAgIHByb3h5X3Bhc3MgaHR0cDovLyRhcGlfdXBzdHJlYW07CiAgICAgIGluY2x1ZGUgcHJveHkuY29uZjsKICAgIH0KCiAgICBsb2NhdGlvbiAvb3BlbmFwaSB7CiAgICAgIHNldCAkYXBpX3Vwc3RyZWFtIGFwaTo1MDAxOwogICAgICBwcm94eV9wYXNzIGh0dHA6Ly8kYXBpX3Vwc3RyZWFtOwogICAgICBpbmNsdWRlIHByb3h5LmNvbmY7CiAgICB9CgogICAgbG9jYXRpb24gL2ZpbGVzIHsKICAgICAgc2V0ICRhcGlfdXBzdHJlYW0gYXBpOjUwMDE7CiAgICAgIHByb3h5X3Bhc3MgaHR0cDovLyRhcGlfdXBzdHJlYW07CiAgICAgIGluY2x1ZGUgcHJveHkuY29uZjsKICAgIH0KCiAgICBsb2NhdGlvbiAvZXhwbG9yZSB7CiAgICAgIHNldCAkd2ViX3Vwc3RyZWFtIHdlYjozMDAwOwogICAgICBwcm94eV9wYXNzIGh0dHA6Ly8kd2ViX3Vwc3RyZWFtOwogICAgICBpbmNsdWRlIHByb3h5LmNvbmY7CiAgICB9CgogICAgbG9jYXRpb24gL2UvIHsKICAgICAgc2V0ICRwbHVnaW5fZGFlbW9uX3Vwc3RyZWFtIHBsdWdpbl9kYWVtb246NTAwMjsKICAgICAgcHJveHlfcGFzcyBodHRwOi8vJHBsdWdpbl9kYWVtb25fdXBzdHJlYW07CiAgICAgIHByb3h5X3NldF9oZWFkZXIgRGlmeS1Ib29rLVVybCAkc2NoZW1lOi8vJGhvc3QkcmVxdWVzdF91cmk7CiAgICAgIGluY2x1ZGUgcHJveHkuY29uZjsKICAgIH0KCiAgICBsb2NhdGlvbiAvIHsKICAgICAgc2V0ICR3ZWJfdXBzdHJlYW0gd2ViOjMwMDA7CiAgICAgIHByb3h5X3Bhc3MgaHR0cDovLyR3ZWJfdXBzdHJlYW07CiAgICAgIGluY2x1ZGUgcHJveHkuY29uZjsKICAgIH0KCiAgICBsb2NhdGlvbiAvbWNwIHsKICAgICAgc2V0ICRhcGlfdXBzdHJlYW0gYXBpOjUwMDE7CiAgICAgIHByb3h5X3Bhc3MgaHR0cDovLyRhcGlfdXBzdHJlYW07CiAgICAgIGluY2x1ZGUgcHJveHkuY29uZjsKICAgIH0KCiAgICBsb2NhdGlvbiAvdHJpZ2dlcnMgewogICAgICBzZXQgJGFwaV91cHN0cmVhbSBhcGk6NTAwMTsKICAgICAgcHJveHlfcGFzcyBodHRwOi8vJGFwaV91cHN0cmVhbTsKICAgICAgaW5jbHVkZSBwcm94eS5jb25mOwogICAgfQogICAgCiAgICAjIHBsYWNlaG9sZGVyIGZvciBhY21lIGNoYWxsZW5nZSBsb2NhdGlvbgogICAgJHtBQ01FX0NIQUxMRU5HRV9MT0NBVElPTn0KCiAgICAjIHBsYWNlaG9sZGVyIGZvciBodHRwcyBjb25maWcgZGVmaW5lZCBpbiBodHRwcy5jb25mLnRlbXBsYXRlCiAgICAke0hUVFBTX0NPTkZJR30KfQo=
+      DIFY_CONF_NGINX_EP_B64: IyEvYmluL2Jhc2gKCkhUVFBTX0NPTkZJRz0nJwoKaWYgWyAiJHtOR0lOWF9IVFRQU19FTkFCTEVEfSIgPSAidHJ1ZSIgXTsgdGhlbgogICAgIyBDaGVjayBpZiB0aGUgY2VydGlmaWNhdGUgYW5kIGtleSBmaWxlcyBmb3IgdGhlIHNwZWNpZmllZCBkb21haW4gZXhpc3QKICAgIGlmIFsgLW4gIiR7Q0VSVEJPVF9ET01BSU59IiBdICYmIFwKICAgICAgIFsgLWYgIi9ldGMvbGV0c2VuY3J5cHQvbGl2ZS8ke0NFUlRCT1RfRE9NQUlOfS8ke05HSU5YX1NTTF9DRVJUX0ZJTEVOQU1FfSIgXSAmJiBcCiAgICAgICBbIC1mICIvZXRjL2xldHNlbmNyeXB0L2xpdmUvJHtDRVJUQk9UX0RPTUFJTn0vJHtOR0lOWF9TU0xfQ0VSVF9LRVlfRklMRU5BTUV9IiBdOyB0aGVuCiAgICAgICAgU1NMX0NFUlRJRklDQVRFX1BBVEg9Ii9ldGMvbGV0c2VuY3J5cHQvbGl2ZS8ke0NFUlRCT1RfRE9NQUlOfS8ke05HSU5YX1NTTF9DRVJUX0ZJTEVOQU1FfSIKICAgICAgICBTU0xfQ0VSVElGSUNBVEVfS0VZX1BBVEg9Ii9ldGMvbGV0c2VuY3J5cHQvbGl2ZS8ke0NFUlRCT1RfRE9NQUlOfS8ke05HSU5YX1NTTF9DRVJUX0tFWV9GSUxFTkFNRX0iCiAgICBlbHNlCiAgICAgICAgU1NMX0NFUlRJRklDQVRFX1BBVEg9Ii9ldGMvc3NsLyR7TkdJTlhfU1NMX0NFUlRfRklMRU5BTUV9IgogICAgICAgIFNTTF9DRVJUSUZJQ0FURV9LRVlfUEFUSD0iL2V0Yy9zc2wvJHtOR0lOWF9TU0xfQ0VSVF9LRVlfRklMRU5BTUV9IgogICAgZmkKICAgIGV4cG9ydCBTU0xfQ0VSVElGSUNBVEVfUEFUSAogICAgZXhwb3J0IFNTTF9DRVJUSUZJQ0FURV9LRVlfUEFUSAoKICAgICMgc2V0IHRoZSBIVFRQU19DT05GSUcgZW52aXJvbm1lbnQgdmFyaWFibGUgdG8gdGhlIGNvbnRlbnQgb2YgdGhlIGh0dHBzLmNvbmYudGVtcGxhdGUKICAgIEhUVFBTX0NPTkZJRz0kKGVudnN1YnN0IDwgL2V0Yy9uZ2lueC9odHRwcy5jb25mLnRlbXBsYXRlKQogICAgZXhwb3J0IEhUVFBTX0NPTkZJRwogICAgIyBTdWJzdGl0dXRlIHRoZSBIVFRQU19DT05GSUcgaW4gdGhlIGRlZmF1bHQuY29uZi50ZW1wbGF0ZSB3aXRoIGNvbnRlbnQgZnJvbSBodHRwcy5jb25mLnRlbXBsYXRlCiAgICBlbnZzdWJzdCAnJHtIVFRQU19DT05GSUd9JyA8IC9ldGMvbmdpbngvY29uZi5kL2RlZmF1bHQuY29uZi50ZW1wbGF0ZSA+IC9ldGMvbmdpbngvY29uZi5kL2RlZmF1bHQuY29uZgpmaQpleHBvcnQgSFRUUFNfQ09ORklHCgppZiBbICIke05HSU5YX0VOQUJMRV9DRVJUQk9UX0NIQUxMRU5HRX0iID0gInRydWUiIF07IHRoZW4KICAgIEFDTUVfQ0hBTExFTkdFX0xPQ0FUSU9OPSdsb2NhdGlvbiAvLndlbGwta25vd24vYWNtZS1jaGFsbGVuZ2UvIHsgcm9vdCAvdmFyL3d3dy9odG1sOyB9JwplbHNlCiAgICBBQ01FX0NIQUxMRU5HRV9MT0NBVElPTj0nJwpmaQpleHBvcnQgQUNNRV9DSEFMTEVOR0VfTE9DQVRJT04KCmVudl92YXJzPSQocHJpbnRlbnYgfCBjdXQgLWQ9IC1mMSB8IHNlZCAncy9eLyQvZycgfCBwYXN0ZSAtc2QsIC0pCgplbnZzdWJzdCAiJGVudl92YXJzIiA8IC9ldGMvbmdpbngvbmdpbnguY29uZi50ZW1wbGF0ZSA+IC9ldGMvbmdpbngvbmdpbnguY29uZgplbnZzdWJzdCAiJGVudl92YXJzIiA8IC9ldGMvbmdpbngvcHJveHkuY29uZi50ZW1wbGF0ZSA+IC9ldGMvbmdpbngvcHJveHkuY29uZgoKZW52c3Vic3QgIiRlbnZfdmFycyIgPCAvZXRjL25naW54L2NvbmYuZC9kZWZhdWx0LmNvbmYudGVtcGxhdGUgPiAvZXRjL25naW54L2NvbmYuZC9kZWZhdWx0LmNvbmYKCiMgU3RhcnQgTmdpbnggdXNpbmcgdGhlIGRlZmF1bHQgZW50cnlwb2ludApleGVjIG5naW54IC1nICdkYWVtb24gb2ZmOycK
     image: nginx:latest
     networks:
       default: null
@@ -657,17 +691,6 @@ services:
       source: nginx_ssl
       target: /etc/ssl
       volume: {}
-    configs:
-    - source: nginx_conf_template
-      target: /etc/nginx/nginx.conf.template
-    - source: nginx_proxy_template
-      target: /etc/nginx/proxy.conf.template
-    - source: nginx_https_template
-      target: /etc/nginx/https.conf.template
-    - source: nginx_entrypoint
-      target: /docker-entrypoint-mount.sh
-    - source: nginx_default_conf_template
-      target: /etc/nginx/conf.d/default.conf.template
   plugin_daemon:
     depends_on:
       db_postgres:
@@ -1252,31 +1275,32 @@ services:
       source: sandbox_deps
       target: /dependencies
       volume: {}
-    configs:
-    - source: sandbox_config
-      target: /conf/config.yaml
+    - type: volume
+      source: sandbox_conf
+      target: /conf
+      volume: {}
+    depends_on:
+      init-assets:
+        condition: service_completed_successfully
   ssrf_proxy:
     entrypoint:
-    - sh
+    - /bin/sh
     - -c
-    - "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh"
+    - printf %s "$$DIFY_CONF_SQUID_B64" | base64 -d > /etc/squid/squid.conf.template && printf %s "$$DIFY_CONF_SQUID_COMMON_B64" | base64 -d > /etc/squid/dify_common.conf.template && printf %s "$$DIFY_CONF_SQUID_EP_B64"
+      | base64 -d > /docker-entrypoint-mount.sh && cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && exec /docker-entrypoint.sh
     environment:
       COREDUMP_DIR: /var/spool/squid
       HTTP_PORT: '3128'
       SSRF_PROXY_ALLOW_PRIVATE_DOMAINS: ''
       SSRF_PROXY_ALLOW_PRIVATE_IPS: ''
+      DIFY_CONF_SQUID_B64: aW5jbHVkZSAvZXRjL3NxdWlkL2RpZnlfY29tbW9uLmNvbmYKCmFjbCBhbGxvd2VkX2RvbWFpbnMgZHN0ZG9tYWluIC5tYXJrZXRwbGFjZS5kaWZ5LmFpCgpodHRwX3BvcnQgJHtIVFRQX1BPUlR9CgpodHRwX2FjY2VzcyBkZW55ICFTYWZlX3BvcnRzCmh0dHBfYWNjZXNzIGRlbnkgQ09OTkVDVCAhU1NMX3BvcnRzCmh0dHBfYWNjZXNzIGFsbG93IGxvY2FsaG9zdCBtYW5hZ2VyCmh0dHBfYWNjZXNzIGRlbnkgbWFuYWdlcgppbmNsdWRlIC9ldGMvc3F1aWQvZGlmeV9zYW5kYm94X3Byb3h5LmNvbmYKaW5jbHVkZSAvZXRjL3NxdWlkL2RpZnlfYWxsb3dfcHJpdmF0ZS5jb25mCmh0dHBfYWNjZXNzIGRlbnkgdG9fcHJpdmF0ZV9uZXR3b3JrcwpodHRwX2FjY2VzcyBhbGxvdyBhbGxvd2VkX2RvbWFpbnMKaHR0cF9hY2Nlc3MgYWxsb3cgY2xpZW50X2xvY2FsbmV0Cmh0dHBfYWNjZXNzIGFsbG93IGxvY2FsaG9zdApodHRwX2FjY2VzcyBkZW55IGFsbAo=
+      DIFY_CONF_SQUID_COMMON_B64: IyBTaGFyZWQgU3F1aWQgY29uZmlndXJhdGlvbiB1c2VkIGJ5IGJvdGggc3NyZl9wcm94eSBhbmQgYWdlbnRfc3NyZl9wcm94eS4KCiMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMgQUNMIERlZmluaXRpb25zICMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjCmFjbCBjbGllbnRfbG9jYWxuZXQgc3JjIDAuMC4wLjEtMC4yNTUuMjU1LjI1NQkjIFJGQyAxMTIyICJ0aGlzIiBuZXR3b3JrIChMQU4pCmFjbCBjbGllbnRfbG9jYWxuZXQgc3JjIDEwLjAuMC4wLzgJCSMgUkZDIDE5MTggbG9jYWwgcHJpdmF0ZSBuZXR3b3JrIChMQU4pCmFjbCBjbGllbnRfbG9jYWxuZXQgc3JjIDEwMC42NC4wLjAvMTAJCSMgUkZDIDY1OTggc2hhcmVkIGFkZHJlc3Mgc3BhY2UgKENHTikKYWNsIGNsaWVudF9sb2NhbG5ldCBzcmMgMTY5LjI1NC4wLjAvMTYgCSMgUkZDIDM5MjcgbGluay1sb2NhbCAoZGlyZWN0bHkgcGx1Z2dlZCkgbWFjaGluZXMKYWNsIGNsaWVudF9sb2NhbG5ldCBzcmMgMTcyLjE2LjAuMC8xMgkJIyBSRkMgMTkxOCBsb2NhbCBwcml2YXRlIG5ldHdvcmsgKExBTikKYWNsIGNsaWVudF9sb2NhbG5ldCBzcmMgMTkyLjE2OC4wLjAvMTYJCSMgUkZDIDE5MTggbG9jYWwgcHJpdmF0ZSBuZXR3b3JrIChMQU4pCmFjbCBjbGllbnRfbG9jYWxuZXQgc3JjIGZjMDA6Oi83ICAgICAgIAkjIFJGQyA0MTkzIGxvY2FsIHByaXZhdGUgbmV0d29yayByYW5nZQphY2wgY2xpZW50X2xvY2FsbmV0IHNyYyBmZTgwOjovMTAgICAgICAJIyBSRkMgNDI5MSBsaW5rLWxvY2FsIChkaXJlY3RseSBwbHVnZ2VkKSBtYWNoaW5lcwoKYWNsIHRvX3ByaXZhdGVfbmV0d29ya3MgZHN0IDAuMC4wLjAvOAphY2wgdG9fcHJpdmF0ZV9uZXR3b3JrcyBkc3QgMTAuMC4wLjAvOAphY2wgdG9fcHJpdmF0ZV9uZXR3b3JrcyBkc3QgMTAwLjY0LjAuMC8xMAphY2wgdG9fcHJpdmF0ZV9uZXR3b3JrcyBkc3QgMTI3LjAuMC4wLzgKYWNsIHRvX3ByaXZhdGVfbmV0d29ya3MgZHN0IDE2OS4yNTQuMC4wLzE2CmFjbCB0b19wcml2YXRlX25ldHdvcmtzIGRzdCAxNzIuMTYuMC4wLzEyCmFjbCB0b19wcml2YXRlX25ldHdvcmtzIGRzdCAxOTIuMTY4LjAuMC8xNgphY2wgdG9fcHJpdmF0ZV9uZXR3b3JrcyBkc3QgMjI0LjAuMC4wLzQKYWNsIHRvX3ByaXZhdGVfbmV0d29ya3MgZHN0IDI0MC4wLjAuMC80CmFjbCB0b19wcml2YXRlX25ldHdvcmtzIGRzdCA6Oi8xMjgKYWNsIHRvX3ByaXZhdGVfbmV0d29ya3MgZHN0IDo6MS8xMjgKYWNsIHRvX3ByaXZhdGVfbmV0d29ya3MgZHN0IDo6ZmZmZjowOjAvOTYgICAgIyBJUHY0LW1hcHBlZAphY2wgdG9fcHJpdmF0ZV9uZXR3b3JrcyBkc3QgOjovOTYgICAgICAgICAgICAjIGRlcHJlY2F0ZWQgSVB2NC1jb21wYXRpYmxlCmFjbCB0b19wcml2YXRlX25ldHdvcmtzIGRzdCBmYzAwOjovNwphY2wgdG9fcHJpdmF0ZV9uZXR3b3JrcyBkc3QgZmU4MDo6LzEwCgphY2wgU1NMX3BvcnRzIHBvcnQgNDQzCmFjbCBTYWZlX3BvcnRzIHBvcnQgODAJCSMgaHR0cAphY2wgU2FmZV9wb3J0cyBwb3J0IDIxCQkjIGZ0cAphY2wgU2FmZV9wb3J0cyBwb3J0IDQ0MwkJIyBodHRwcwphY2wgU2FmZV9wb3J0cyBwb3J0IDcwCQkjIGdvcGhlcgphY2wgU2FmZV9wb3J0cyBwb3J0IDIxMAkJIyB3YWlzCmFjbCBTYWZlX3BvcnRzIHBvcnQgMTAyNS02NTUzNQkjIHVucmVnaXN0ZXJlZCBwb3J0cwphY2wgU2FmZV9wb3J0cyBwb3J0IDI4MAkJIyBodHRwLW1nbXQKYWNsIFNhZmVfcG9ydHMgcG9ydCA0ODgJCSMgZ3NzLWh0dHAKYWNsIFNhZmVfcG9ydHMgcG9ydCA1OTEJCSMgZmlsZW1ha2VyCmFjbCBTYWZlX3BvcnRzIHBvcnQgNzc3CQkjIG11bHRpbGluZyBodHRwCmFjbCBDT05ORUNUIG1ldGhvZCBDT05ORUNUCgojIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIENvbW1vbiBQYXJhbWV0ZXJzICMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjCgp0Y3Bfb3V0Z29pbmdfYWRkcmVzcyAwLjAuMC4wCgojIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIFByb3h5IFNlcnZlciAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIwpjb3JlZHVtcF9kaXIgJHtDT1JFRFVNUF9ESVJ9CnJlZnJlc2hfcGF0dGVybiBeZnRwOgkJMTQ0MAkyMCUJMTAwODAKcmVmcmVzaF9wYXR0ZXJuIF5nb3BoZXI6CTE0NDAJMCUJMTQ0MApyZWZyZXNoX3BhdHRlcm4gLWkgKC9jZ2ktYmluL3xcPykgMAkwJQkwCnJlZnJlc2hfcGF0dGVybiBcLyhQYWNrYWdlc3xTb3VyY2VzKSh8XC5iejJ8XC5nenxcLnh6KSQgMCAwJSAwIHJlZnJlc2gtaW1zCnJlZnJlc2hfcGF0dGVybiBcL1JlbGVhc2UofFwuZ3BnKSQgMCAwJSAwIHJlZnJlc2gtaW1zCnJlZnJlc2hfcGF0dGVybiBcL0luUmVsZWFzZSQgMCAwJSAwIHJlZnJlc2gtaW1zCnJlZnJlc2hfcGF0dGVybiBcLyhUcmFuc2xhdGlvbi0uKikofFwuYnoyfFwuZ3p8XC54eikkIDAgMCUgMCByZWZyZXNoLWltcwpyZWZyZXNoX3BhdHRlcm4gLgkJMAkyMCUJNDMyMAoKIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyBSZXF1ZXN0IEJ1ZmZlciAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIwpjbGllbnRfcmVxdWVzdF9idWZmZXJfbWF4X3NpemUgMTAwIE1CCgojIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIFBlcmZvcm1hbmNlICYgQ29uY3VycmVuY3kgIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIwptYXhfZmlsZWRlc2NyaXB0b3JzIDY1NTM2CmNvbm5lY3RfdGltZW91dCAzMCBzZWNvbmRzCnJlcXVlc3RfdGltZW91dCAyIG1pbnV0ZXMKcmVhZF90aW1lb3V0IDIgbWludXRlcwpjbGllbnRfbGlmZXRpbWUgNSBtaW51dGVzCnNodXRkb3duX2xpZmV0aW1lIDMwIHNlY29uZHMKCnNlcnZlcl9wZXJzaXN0ZW50X2Nvbm5lY3Rpb25zIG9uCmNsaWVudF9wZXJzaXN0ZW50X2Nvbm5lY3Rpb25zIG9uCnBlcnNpc3RlbnRfcmVxdWVzdF90aW1lb3V0IDMwIHNlY29uZHMKcGNvbm5fdGltZW91dCAxIG1pbnV0ZQoKY2xpZW50X2RiIG9uCnNlcnZlcl9pZGxlX3Bjb25uX3RpbWVvdXQgMiBtaW51dGVzCmNsaWVudF9pZGxlX3Bjb25uX3RpbWVvdXQgMiBtaW51dGVzCgpxdWlja19hYm9ydF9taW4gMTYgS0IKcXVpY2tfYWJvcnRfbWF4IDE2IE1CCnF1aWNrX2Fib3J0X3BjdCA5NQoKbWVtb3J5X2NhY2hlX21vZGUgZGlzawpjYWNoZV9tZW0gMjU2IE1CCm1heGltdW1fb2JqZWN0X3NpemVfaW5fbWVtb3J5IDUxMiBLQgoKZG5zX3RpbWVvdXQgMzAgc2Vjb25kcwpkbnNfcmV0cmFuc21pdF9pbnRlcnZhbCA1IHNlY29uZHMKCmxvZ2Zvcm1hdCBkaWZ5X2xvZyAldHMuJTAzdHUgJTZ0ciAlPmEgJVNzLyUwMz5IcyAlPHN0ICVybSAlcnUgJVt1biAlU2gvJTxhICVtdAphY2Nlc3NfbG9nIGRhZW1vbjovdmFyL2xvZy9zcXVpZC9hY2Nlc3MubG9nIGRpZnlfbG9nCmxvZ2ZpbGVfcm90YXRlIDEwCg==
+      DIFY_CONF_SQUID_EP_B64: IyEvYmluL2Jhc2gKCiMgTW9kaWZpZWQgYmFzZWQgb24gU3F1aWQgT0NJIGltYWdlIGVudHJ5cG9pbnQKCiMgVGhpcyBlbnRyeXBvaW50IGFpbXMgdG8gZm9yd2FyZCB0aGUgc3F1aWQgbG9ncyB0byBzdGRvdXQgdG8gYXNzaXN0IHVzZXJzIG9mCiMgY29tbW9uIGNvbnRhaW5lciByZWxhdGVkIHRvb2xpbmcgKGUuZy4sIGt1YmVybmV0ZXMsIGRvY2tlci1jb21wb3NlLCBldGMpIHRvCiMgYWNjZXNzIHRoZSBzZXJ2aWNlIGxvZ3MuCgojIE1vcmVvdmVyLCBpdCBpbnZva2VzIHRoZSBzcXVpZCBiaW5hcnksIGxlYXZpbmcgYWxsIHRoZSBkZXNpcmVkIHBhcmFtZXRlcnMgdG8KIyBiZSBwcm92aWRlZCBieSB0aGUgImNvbW1hbmQiIHBhc3NlZCB0byB0aGUgc3Bhd25lZCBjb250YWluZXIuIElmIG5vIGNvbW1hbmQKIyBpcyBwcm92aWRlZCBieSB0aGUgdXNlciwgdGhlIGRlZmF1bHQgYmVoYXZpb3IgKGFzIHBlciB0aGUgQ01EIHN0YXRlbWVudCBpbgojIHRoZSBEb2NrZXJmaWxlKSB3aWxsIGJlIHRvIHVzZSBVYnVudHUncyBkZWZhdWx0IGNvbmZpZ3VyYXRpb24gWzFdIGFuZCBydW4KIyBzcXVpZCB3aXRoIHRoZSAiLU5ZQyIgb3B0aW9ucyB0byBtaW1pYyB0aGUgYmVoYXZpb3Igb2YgdGhlIFVidW50dSBwcm92aWRlZAojIHN5c3RlbWQgdW5pdC4KCiMgWzFdIFRoZSBkZWZhdWx0IGNvbmZpZ3VyYXRpb24gaXMgY2hhbmdlZCBpbiB0aGUgRG9ja2VyZmlsZSB0byBhbGxvdyBsb2NhbAojIG5ldHdvcmsgY29ubmVjdGlvbnMuIFNlZSB0aGUgRG9ja2VyZmlsZSBmb3IgZnVydGhlciBpbmZvcm1hdGlvbi4KCmVjaG8gIltFTlRSWVBPSU5UXSByZS1jcmVhdGUgc25ha2VvaWwgc2VsZi1zaWduZWQgY2VydGlmaWNhdGUgcmVtb3ZlZCBpbiB0aGUgYnVpbGQgcHJvY2VzcyIKaWYgWyAhIC1mIC9ldGMvc3NsL3ByaXZhdGUvc3NsLWNlcnQtc25ha2VvaWwua2V5IF07IHRoZW4KICAgIC91c3Ivc2Jpbi9tYWtlLXNzbC1jZXJ0IGdlbmVyYXRlLWRlZmF1bHQtc25ha2VvaWwgLS1mb3JjZS1vdmVyd3JpdGUgPiAvZGV2L251bGwgMj4mMQpmaQoKdGFpbCAtRiAvdmFyL2xvZy9zcXVpZC9hY2Nlc3MubG9nIDI+L2Rldi9udWxsICYKdGFpbCAtRiAvdmFyL2xvZy9zcXVpZC9lcnJvci5sb2cgMj4vZGV2L251bGwgJgp0YWlsIC1GIC92YXIvbG9nL3NxdWlkL3N0b3JlLmxvZyAyPi9kZXYvbnVsbCAmCnRhaWwgLUYgL3Zhci9sb2cvc3F1aWQvY2FjaGUubG9nIDI+L2Rldi9udWxsICYKCkFMTE9XX1BSSVZBVEVfQ09ORj0vZXRjL3NxdWlkL2RpZnlfYWxsb3dfcHJpdmF0ZS5jb25mClNBTkRCT1hfUFJPWFlfQ09ORj0vZXRjL3NxdWlkL2RpZnlfc2FuZGJveF9wcm94eS5jb25mCgp3cml0ZV9vcHRpb25hbF9wcml2YXRlX2FsbG93bGlzdCgpIHsKICAgIGxvY2FsIGVudl9uYW1lPSIkMSIKICAgIGxvY2FsIGFjbF9uYW1lPSIkMiIKICAgIGxvY2FsIGFjbF90eXBlPSIkMyIKICAgIGxvY2FsIHJhd192YWx1ZXM9IiR7IWVudl9uYW1lOi19IgoKICAgIHJhd192YWx1ZXM9IiR7cmF3X3ZhbHVlcy8vLC8gfSIKCiAgICBpZiBbIC16ICIke3Jhd192YWx1ZXMvL1tbOnNwYWNlOl1dL30iIF07IHRoZW4KICAgICAgICByZXR1cm4KICAgIGZpCgogICAgcHJpbnRmICdhY2wgJXMgJXMnICIkYWNsX25hbWUiICIkYWNsX3R5cGUiID4+ICIkQUxMT1dfUFJJVkFURV9DT05GIgogICAgZm9yIHZhbHVlIGluICRyYXdfdmFsdWVzOyBkbwogICAgICAgIHByaW50ZiAnICVzJyAiJHZhbHVlIiA+PiAiJEFMTE9XX1BSSVZBVEVfQ09ORiIKICAgIGRvbmUKICAgIHByaW50ZiAnXG5odHRwX2FjY2VzcyBhbGxvdyBjbGllbnRfbG9jYWxuZXQgJXNcbicgIiRhY2xfbmFtZSIgPj4gIiRBTExPV19QUklWQVRFX0NPTkYiCn0KCnsKICAgIGVjaG8gIiMgR2VuZXJhdGVkIGJ5IGRvY2tlci1lbnRyeXBvaW50LnNoLiIKICAgIGVjaG8gIiMgQWxsb3dzIHNlbGVjdGVkIHByaXZhdGUgdGFyZ2V0cyBiZWZvcmUgdGhlIGRlZmF1bHQgcHJpdmF0ZS1uZXR3b3JrIGRlbnkgcnVsZS4iCn0gPiAiJEFMTE9XX1BSSVZBVEVfQ09ORiIKd3JpdGVfb3B0aW9uYWxfcHJpdmF0ZV9hbGxvd2xpc3QgIlNTUkZfUFJPWFlfQUxMT1dfUFJJVkFURV9JUFMiICJkaWZ5X2FsbG93ZWRfcHJpdmF0ZV9uZXR3b3JrcyIgImRzdCIKd3JpdGVfb3B0aW9uYWxfcHJpdmF0ZV9hbGxvd2xpc3QgIlNTUkZfUFJPWFlfQUxMT1dfUFJJVkFURV9ET01BSU5TIiAiZGlmeV9hbGxvd2VkX3ByaXZhdGVfZG9tYWlucyIgImRzdGRvbWFpbiIKCnsKICAgIGVjaG8gIiMgR2VuZXJhdGVkIGJ5IGRvY2tlci1lbnRyeXBvaW50LnNoLiIKICAgIGVjaG8gIiMgRW5hYmxlcyB0aGUgbWlkZGxld2FyZS1vbmx5IHNhbmRib3ggaG9zdCBicmlkZ2Ugd2hlbiBjb25maWd1cmVkLiIKfSA+ICIkU0FOREJPWF9QUk9YWV9DT05GIgoKaWYgWyAtbiAiJHtTU1JGX1NBTkRCT1hfUFJPWFlfUE9SVDotfSIgXTsgdGhlbgogICAgc2FuZGJveF9wcm94eV9ob3N0PSIke1NTUkZfU0FOREJPWF9QUk9YWV9IT1NUOi1zYW5kYm94fSIKICAgIHNhbmRib3hfcHJveHlfdGFyZ2V0X3BvcnQ9IiR7U0FOREJPWF9QT1JUOi04MTk0fSIKCiAgICB7CiAgICAgICAgcHJpbnRmICdodHRwX3BvcnQgJXMgYWNjZWwgdmhvc3RcbicgIiRTU1JGX1NBTkRCT1hfUFJPWFlfUE9SVCIKICAgICAgICBwcmludGYgJ2NhY2hlX3BlZXIgJXMgcGFyZW50ICVzIDAgbm8tcXVlcnkgb3JpZ2luc2VydmVyIG5hbWU9ZGlmeV9zYW5kYm94XG4nIFwKICAgICAgICAgICAgIiRzYW5kYm94X3Byb3h5X2hvc3QiIFwKICAgICAgICAgICAgIiRzYW5kYm94X3Byb3h5X3RhcmdldF9wb3J0IgogICAgICAgIHByaW50ZiAnYWNsIGRpZnlfc2FuZGJveF9wcm94eV9wb3J0IGxvY2FscG9ydCAlc1xuJyAiJFNTUkZfU0FOREJPWF9QUk9YWV9QT1JUIgogICAgICAgIHByaW50ZiAnaHR0cF9hY2Nlc3MgYWxsb3cgZGlmeV9zYW5kYm94X3Byb3h5X3BvcnRcbicKICAgIH0gPj4gIiRTQU5EQk9YX1BST1hZX0NPTkYiCmZpCgojIFJlcGxhY2UgZW52aXJvbm1lbnQgdmFyaWFibGVzIGluIGEgdGVtcGxhdGUgZmlsZS4KZXhwYW5kX2VudigpIHsKICAgIGF3ayAnewogICAgICAgIHdoaWxlKG1hdGNoKCQwLCAvXCR7W0EtWmEtel9dW0EtWmEtel8wLTldKn0vKSkgewogICAgICAgICAgICB2YXIgPSBzdWJzdHIoJDAsIFJTVEFSVCsyLCBSTEVOR1RILTMpCiAgICAgICAgICAgIHZhbCA9IEVOVklST05bdmFyXQogICAgICAgICAgICAkMCA9IHN1YnN0cigkMCwgMSwgUlNUQVJULTEpIHZhbCBzdWJzdHIoJDAsIFJTVEFSVCtSTEVOR1RIKQogICAgICAgIH0KICAgICAgICBwcmludAogICAgfScgIiQxIgp9CgojIFJlcGxhY2UgZW52aXJvbm1lbnQgdmFyaWFibGVzIGluIHRoZSB0ZW1wbGF0ZXMgYW5kIG91dHB1dCB0byBzcXVpZC5jb25mCmVjaG8gIltFTlRSWVBPSU5UXSByZXBsYWNpbmcgZW52aXJvbm1lbnQgdmFyaWFibGVzIGluIHRoZSB0ZW1wbGF0ZXMiCmV4cGFuZF9lbnYgL2V0Yy9zcXVpZC9zcXVpZC5jb25mLnRlbXBsYXRlID4gL2V0Yy9zcXVpZC9zcXVpZC5jb25mCmV4cGFuZF9lbnYgL2V0Yy9zcXVpZC9kaWZ5X2NvbW1vbi5jb25mLnRlbXBsYXRlID4gL2V0Yy9zcXVpZC9kaWZ5X2NvbW1vbi5jb25mCgovdXNyL3NiaW4vc3F1aWQgLU56CmVjaG8gIltFTlRSWVBPSU5UXSBzdGFydGluZyBzcXVpZCIKL3Vzci9zYmluL3NxdWlkIC1mIC9ldGMvc3F1aWQvc3F1aWQuY29uZiAtTllDIDEK
     image: ubuntu/squid:latest
     networks:
       default: null
       ssrf_proxy_network: null
     restart: always
-    configs:
-    - source: squid_conf_template
-      target: /etc/squid/squid.conf.template
-    - source: squid_common_template
-      target: /etc/squid/dify_common.conf.template
-    - source: squid_entrypoint
-      target: /docker-entrypoint-mount.sh
   weaviate:
     environment:
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
@@ -1495,7 +1519,7 @@ services:
       SANDBOX_HTTPS_PROXY: http://ssrf_proxy:3128
       SANDBOX_PORT: '8194'
       SANDBOX_WORKER_TIMEOUT: '15'
-      SECRET_KEY: CHANGE_ME_TO_A_LONG_RANDOM_STRING
+      SECRET_KEY: managed-by-init-secret
       SENTRY_DSN: ''
       SERVER_CONSOLE_API_URL: http://api:5001
       SERVER_WORKER_AMOUNT: '1'
@@ -1553,6 +1577,19 @@ services:
     networks:
       default: null
     restart: always
+    volumes:
+    - type: volume
+      source: secret_key
+      target: /keys
+      read_only: true
+      volume: *id001
+    depends_on:
+      init-assets:
+        condition: service_completed_successfully
+    entrypoint:
+    - /bin/sh
+    - -c
+    - export SECRET_KEY=$$(cat /keys/secret); exec /bin/sh ./entrypoint.sh
   worker:
     depends_on:
       db_postgres:
@@ -1561,6 +1598,8 @@ services:
       redis:
         condition: service_started
         required: true
+      init-assets:
+        condition: service_completed_successfully
     environment:
       AGENT_BACKEND_API_TOKEN: dify-agent-run-token-for-dev-only
       AGENT_BACKEND_BASE_URL: http://agent_backend:5050
@@ -1755,7 +1794,7 @@ services:
       SANDBOX_HTTPS_PROXY: http://ssrf_proxy:3128
       SANDBOX_PORT: '8194'
       SANDBOX_WORKER_TIMEOUT: '15'
-      SECRET_KEY: CHANGE_ME_TO_A_LONG_RANDOM_STRING
+      SECRET_KEY: managed-by-init-secret
       SENTRY_DSN: ''
       SENTRY_PROFILES_SAMPLE_RATE: '1.0'
       SENTRY_TRACES_SAMPLE_RATE: '1.0'
@@ -1830,6 +1869,15 @@ services:
       source: app_storage
       target: /app/api/storage
       volume: {}
+    - type: volume
+      source: secret_key
+      target: /keys
+      read_only: true
+      volume: *id001
+    entrypoint:
+    - /bin/sh
+    - -c
+    - export SECRET_KEY=$$(cat /keys/secret); exec /bin/bash /entrypoint.sh
   worker_beat:
     depends_on:
       db_postgres:
@@ -1838,6 +1886,8 @@ services:
       redis:
         condition: service_started
         required: true
+      init-assets:
+        condition: service_completed_successfully
     environment:
       AGENT_BACKEND_BASE_URL: http://agent_backend:5050
       ALLOW_EMBED: 'false'
@@ -2030,7 +2080,7 @@ services:
       SANDBOX_HTTPS_PROXY: http://ssrf_proxy:3128
       SANDBOX_PORT: '8194'
       SANDBOX_WORKER_TIMEOUT: '15'
-      SECRET_KEY: CHANGE_ME_TO_A_LONG_RANDOM_STRING
+      SECRET_KEY: managed-by-init-secret
       SERVER_CONSOLE_API_URL: http://api:5001
       SERVER_WORKER_AMOUNT: '1'
       SERVER_WORKER_CLASS: gevent
@@ -2097,6 +2147,34 @@ services:
       default: null
       ssrf_proxy_network: null
     restart: always
+    volumes:
+    - type: volume
+      source: secret_key
+      target: /keys
+      read_only: true
+      volume: *id001
+    entrypoint:
+    - /bin/sh
+    - -c
+    - export SECRET_KEY=$$(cat /keys/secret); exec /bin/bash /entrypoint.sh
+  init-assets:
+    image: busybox:latest
+    command:
+    - /bin/sh
+    - -c
+    - '[ -s /keys/secret ] || { head -c 48 /dev/urandom | base64 | tr -d "\n" > /keys/.secret.tmp && mv /keys/.secret.tmp /keys/secret; } && printf %s "$$SANDBOX_CONF_B64" | base64 -d > /conf-out/config.yaml'
+    volumes:
+    - type: volume
+      source: secret_key
+      target: /keys
+      volume: {}
+    - type: volume
+      source: sandbox_conf
+      target: /conf-out
+      volume: {}
+    restart: 'no'
+    environment:
+      SANDBOX_CONF_B64: YXBwOgogIHBvcnQ6IDgxOTQKICBkZWJ1ZzogVHJ1ZQogIGtleTogZGlmeS1zYW5kYm94Cm1heF93b3JrZXJzOiA0Cm1heF9yZXF1ZXN0czogNTAKd29ya2VyX3RpbWVvdXQ6IDUKZW5hYmxlX25ldHdvcms6IFRydWUgIyBwbGVhc2UgbWFrZSBzdXJlIHRoZXJlIGlzIG5vIG5ldHdvcmsgcmlzayBpbiB5b3VyIGVudmlyb25tZW50CmFsbG93ZWRfc3lzY2FsbHM6ICMgcGxlYXNlIGxlYXZlIGl0IGVtcHR5IGlmIHlvdSBoYXZlIG5vIGlkZWEgaG93IHNlY2NvbXAgd29ya3MKcHJveHk6CiAgc29ja3M1OiAnJwogIGh0dHA6ICcnCiAgaHR0cHM6ICcnCg==
 networks:
   ssrf_proxy_network:
     driver: bridge
@@ -2110,153 +2188,5 @@ volumes:
   redisdata: {}
   sandbox_deps: {}
   weaviatedata: {}
-configs:
-  nginx_conf_template:
-    content: "# Please do not directly edit this file. Instead, modify the .env variables related to NGINX configuration.\n\nuser  nginx;\nworker_processes  $${NGINX_WORKER_PROCESSES};\n\nerror_log  /var/log/nginx/error.log\
-      \ notice;\npid        /var/run/nginx.pid;\n\n\nevents {\n    worker_connections  1024;\n}\n\n\nhttp {\n    include       /etc/nginx/mime.types;\n    default_type  application/octet-stream;\n\n   \
-      \ log_format  main  '$$remote_addr - $$remote_user [$$time_local] \"$$request\" '\n                      '$$status $$body_bytes_sent \"$$http_referer\" '\n                      '\"$$http_user_agent\"\
-      \ \"$$http_x_forwarded_for\"';\n\n    access_log  /var/log/nginx/access.log  main;\n\n    sendfile        on;\n    #tcp_nopush     on;\n\n    keepalive_timeout  $${NGINX_KEEPALIVE_TIMEOUT};\n\n  \
-      \  #gzip  on;\n    client_max_body_size $${NGINX_CLIENT_MAX_BODY_SIZE};\n\n    include /etc/nginx/conf.d/*.conf;\n}\n"
-  nginx_proxy_template:
-    content: '# Please do not directly edit this file. Instead, modify the .env variables related to NGINX configuration.
-
-
-      proxy_set_header Host $$host;
-
-      # real_ip configuration must validate upstream proxies before replacing $$remote_addr.
-
-      proxy_set_header X-Forwarded-For $$remote_addr;
-
-      proxy_set_header X-Forwarded-Proto $$scheme;
-
-      proxy_set_header X-Forwarded-Port $$server_port;
-
-      proxy_http_version 1.1;
-
-      proxy_set_header Connection "";
-
-      proxy_buffering off;
-
-      proxy_read_timeout $${NGINX_PROXY_READ_TIMEOUT};
-
-      proxy_send_timeout $${NGINX_PROXY_SEND_TIMEOUT};
-
-      '
-  nginx_https_template:
-    content: '# Please do not directly edit this file. Instead, modify the .env variables related to NGINX configuration.
-
-
-      listen $${NGINX_SSL_PORT} ssl;
-
-      ssl_certificate $${SSL_CERTIFICATE_PATH};
-
-      ssl_certificate_key $${SSL_CERTIFICATE_KEY_PATH};
-
-      ssl_protocols $${NGINX_SSL_PROTOCOLS};
-
-      ssl_prefer_server_ciphers on;
-
-      ssl_session_cache shared:SSL:10m;
-
-      ssl_session_timeout 10m;
-
-      '
-  nginx_entrypoint:
-    content: "#!/bin/bash\n\nHTTPS_CONFIG=''\n\nif [ \"$${NGINX_HTTPS_ENABLED}\" = \"true\" ]; then\n    # Check if the certificate and key files for the specified domain exist\n    if [ -n \"$${CERTBOT_DOMAIN}\"\
-      \ ] && \\\n       [ -f \"/etc/letsencrypt/live/$${CERTBOT_DOMAIN}/$${NGINX_SSL_CERT_FILENAME}\" ] && \\\n       [ -f \"/etc/letsencrypt/live/$${CERTBOT_DOMAIN}/$${NGINX_SSL_CERT_KEY_FILENAME}\" ];\
-      \ then\n        SSL_CERTIFICATE_PATH=\"/etc/letsencrypt/live/$${CERTBOT_DOMAIN}/$${NGINX_SSL_CERT_FILENAME}\"\n        SSL_CERTIFICATE_KEY_PATH=\"/etc/letsencrypt/live/$${CERTBOT_DOMAIN}/$${NGINX_SSL_CERT_KEY_FILENAME}\"\
-      \n    else\n        SSL_CERTIFICATE_PATH=\"/etc/ssl/$${NGINX_SSL_CERT_FILENAME}\"\n        SSL_CERTIFICATE_KEY_PATH=\"/etc/ssl/$${NGINX_SSL_CERT_KEY_FILENAME}\"\n    fi\n    export SSL_CERTIFICATE_PATH\n\
-      \    export SSL_CERTIFICATE_KEY_PATH\n\n    # set the HTTPS_CONFIG environment variable to the content of the https.conf.template\n    HTTPS_CONFIG=$$(envsubst < /etc/nginx/https.conf.template)\n\
-      \    export HTTPS_CONFIG\n    # Substitute the HTTPS_CONFIG in the default.conf.template with content from https.conf.template\n    envsubst '$${HTTPS_CONFIG}' < /etc/nginx/conf.d/default.conf.template\
-      \ > /etc/nginx/conf.d/default.conf\nfi\nexport HTTPS_CONFIG\n\nif [ \"$${NGINX_ENABLE_CERTBOT_CHALLENGE}\" = \"true\" ]; then\n    ACME_CHALLENGE_LOCATION='location /.well-known/acme-challenge/ {\
-      \ root /var/www/html; }'\nelse\n    ACME_CHALLENGE_LOCATION=''\nfi\nexport ACME_CHALLENGE_LOCATION\n\nenv_vars=$$(printenv | cut -d= -f1 | sed 's/^/$$/g' | paste -sd, -)\n\nenvsubst \"$$env_vars\"\
-      \ < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf\nenvsubst \"$$env_vars\" < /etc/nginx/proxy.conf.template > /etc/nginx/proxy.conf\n\nenvsubst \"$$env_vars\" < /etc/nginx/conf.d/default.conf.template\
-      \ > /etc/nginx/conf.d/default.conf\n\n# Start Nginx using the default entrypoint\nexec nginx -g 'daemon off;'\n"
-  squid_conf_template:
-    content: 'include /etc/squid/dify_common.conf
-
-
-      acl allowed_domains dstdomain .marketplace.dify.ai
-
-
-      http_port $${HTTP_PORT}
-
-
-      http_access deny !Safe_ports
-
-      http_access deny CONNECT !SSL_ports
-
-      http_access allow localhost manager
-
-      http_access deny manager
-
-      include /etc/squid/dify_sandbox_proxy.conf
-
-      include /etc/squid/dify_allow_private.conf
-
-      http_access deny to_private_networks
-
-      http_access allow allowed_domains
-
-      http_access allow client_localnet
-
-      http_access allow localhost
-
-      http_access deny all
-
-      '
-  squid_common_template:
-    content: "# Shared Squid configuration used by both ssrf_proxy and agent_ssrf_proxy.\n\n################################## ACL Definitions ################################\nacl client_localnet src 0.0.0.1-0.255.255.255\t\
-      # RFC 1122 \"this\" network (LAN)\nacl client_localnet src 10.0.0.0/8\t\t# RFC 1918 local private network (LAN)\nacl client_localnet src 100.64.0.0/10\t\t# RFC 6598 shared address space (CGN)\nacl\
-      \ client_localnet src 169.254.0.0/16 \t# RFC 3927 link-local (directly plugged) machines\nacl client_localnet src 172.16.0.0/12\t\t# RFC 1918 local private network (LAN)\nacl client_localnet src 192.168.0.0/16\t\
-      \t# RFC 1918 local private network (LAN)\nacl client_localnet src fc00::/7       \t# RFC 4193 local private network range\nacl client_localnet src fe80::/10      \t# RFC 4291 link-local (directly\
-      \ plugged) machines\n\nacl to_private_networks dst 0.0.0.0/8\nacl to_private_networks dst 10.0.0.0/8\nacl to_private_networks dst 100.64.0.0/10\nacl to_private_networks dst 127.0.0.0/8\nacl to_private_networks\
-      \ dst 169.254.0.0/16\nacl to_private_networks dst 172.16.0.0/12\nacl to_private_networks dst 192.168.0.0/16\nacl to_private_networks dst 224.0.0.0/4\nacl to_private_networks dst 240.0.0.0/4\nacl to_private_networks\
-      \ dst ::/128\nacl to_private_networks dst ::1/128\nacl to_private_networks dst ::ffff:0:0/96    # IPv4-mapped\nacl to_private_networks dst ::/96            # deprecated IPv4-compatible\nacl to_private_networks\
-      \ dst fc00::/7\nacl to_private_networks dst fe80::/10\n\nacl SSL_ports port 443\nacl Safe_ports port 80\t\t# http\nacl Safe_ports port 21\t\t# ftp\nacl Safe_ports port 443\t\t# https\nacl Safe_ports\
-      \ port 70\t\t# gopher\nacl Safe_ports port 210\t\t# wais\nacl Safe_ports port 1025-65535\t# unregistered ports\nacl Safe_ports port 280\t\t# http-mgmt\nacl Safe_ports port 488\t\t# gss-http\nacl Safe_ports\
-      \ port 591\t\t# filemaker\nacl Safe_ports port 777\t\t# multiling http\nacl CONNECT method CONNECT\n\n################################## Common Parameters ################################\n\ntcp_outgoing_address\
-      \ 0.0.0.0\n\n################################## Proxy Server ################################\ncoredump_dir $${COREDUMP_DIR}\nrefresh_pattern ^ftp:\t\t1440\t20%\t10080\nrefresh_pattern ^gopher:\t\
-      1440\t0%\t1440\nrefresh_pattern -i (/cgi-bin/|\\?) 0\t0%\t0\nrefresh_pattern \\/(Packages|Sources)(|\\.bz2|\\.gz|\\.xz)$$ 0 0% 0 refresh-ims\nrefresh_pattern \\/Release(|\\.gpg)$$ 0 0% 0 refresh-ims\n\
-      refresh_pattern \\/InRelease$$ 0 0% 0 refresh-ims\nrefresh_pattern \\/(Translation-.*)(|\\.bz2|\\.gz|\\.xz)$$ 0 0% 0 refresh-ims\nrefresh_pattern .\t\t0\t20%\t4320\n\n##################################\
-      \ Request Buffer ################################\nclient_request_buffer_max_size 100 MB\n\n################################## Performance & Concurrency ###############################\nmax_filedescriptors\
-      \ 65536\nconnect_timeout 30 seconds\nrequest_timeout 2 minutes\nread_timeout 2 minutes\nclient_lifetime 5 minutes\nshutdown_lifetime 30 seconds\n\nserver_persistent_connections on\nclient_persistent_connections\
-      \ on\npersistent_request_timeout 30 seconds\npconn_timeout 1 minute\n\nclient_db on\nserver_idle_pconn_timeout 2 minutes\nclient_idle_pconn_timeout 2 minutes\n\nquick_abort_min 16 KB\nquick_abort_max\
-      \ 16 MB\nquick_abort_pct 95\n\nmemory_cache_mode disk\ncache_mem 256 MB\nmaximum_object_size_in_memory 512 KB\n\ndns_timeout 30 seconds\ndns_retransmit_interval 5 seconds\n\nlogformat dify_log %ts.%03tu\
-      \ %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt\naccess_log daemon:/var/log/squid/access.log dify_log\nlogfile_rotate 10\n"
-  squid_entrypoint:
-    content: "#!/bin/bash\n\n# Modified based on Squid OCI image entrypoint\n\n# This entrypoint aims to forward the squid logs to stdout to assist users of\n# common container related tooling (e.g., kubernetes,\
-      \ docker-compose, etc) to\n# access the service logs.\n\n# Moreover, it invokes the squid binary, leaving all the desired parameters to\n# be provided by the \"command\" passed to the spawned container.\
-      \ If no command\n# is provided by the user, the default behavior (as per the CMD statement in\n# the Dockerfile) will be to use Ubuntu's default configuration [1] and run\n# squid with the \"-NYC\"\
-      \ options to mimic the behavior of the Ubuntu provided\n# systemd unit.\n\n# [1] The default configuration is changed in the Dockerfile to allow local\n# network connections. See the Dockerfile for\
-      \ further information.\n\necho \"[ENTRYPOINT] re-create snakeoil self-signed certificate removed in the build process\"\nif [ ! -f /etc/ssl/private/ssl-cert-snakeoil.key ]; then\n    /usr/sbin/make-ssl-cert\
-      \ generate-default-snakeoil --force-overwrite > /dev/null 2>&1\nfi\n\ntail -F /var/log/squid/access.log 2>/dev/null &\ntail -F /var/log/squid/error.log 2>/dev/null &\ntail -F /var/log/squid/store.log\
-      \ 2>/dev/null &\ntail -F /var/log/squid/cache.log 2>/dev/null &\n\nALLOW_PRIVATE_CONF=/etc/squid/dify_allow_private.conf\nSANDBOX_PROXY_CONF=/etc/squid/dify_sandbox_proxy.conf\n\nwrite_optional_private_allowlist()\
-      \ {\n    local env_name=\"$$1\"\n    local acl_name=\"$$2\"\n    local acl_type=\"$$3\"\n    local raw_values=\"$${!env_name:-}\"\n\n    raw_values=\"$${raw_values//,/ }\"\n\n    if [ -z \"$${raw_values//[[:space:]]/}\"\
-      \ ]; then\n        return\n    fi\n\n    printf 'acl %s %s' \"$$acl_name\" \"$$acl_type\" >> \"$$ALLOW_PRIVATE_CONF\"\n    for value in $$raw_values; do\n        printf ' %s' \"$$value\" >> \"$$ALLOW_PRIVATE_CONF\"\
-      \n    done\n    printf '\\nhttp_access allow client_localnet %s\\n' \"$$acl_name\" >> \"$$ALLOW_PRIVATE_CONF\"\n}\n\n{\n    echo \"# Generated by docker-entrypoint.sh.\"\n    echo \"# Allows selected\
-      \ private targets before the default private-network deny rule.\"\n} > \"$$ALLOW_PRIVATE_CONF\"\nwrite_optional_private_allowlist \"SSRF_PROXY_ALLOW_PRIVATE_IPS\" \"dify_allowed_private_networks\"\
-      \ \"dst\"\nwrite_optional_private_allowlist \"SSRF_PROXY_ALLOW_PRIVATE_DOMAINS\" \"dify_allowed_private_domains\" \"dstdomain\"\n\n{\n    echo \"# Generated by docker-entrypoint.sh.\"\n    echo \"\
-      # Enables the middleware-only sandbox host bridge when configured.\"\n} > \"$$SANDBOX_PROXY_CONF\"\n\nif [ -n \"$${SSRF_SANDBOX_PROXY_PORT:-}\" ]; then\n    sandbox_proxy_host=\"$${SSRF_SANDBOX_PROXY_HOST:-sandbox}\"\
-      \n    sandbox_proxy_target_port=\"$${SANDBOX_PORT:-8194}\"\n\n    {\n        printf 'http_port %s accel vhost\\n' \"$$SSRF_SANDBOX_PROXY_PORT\"\n        printf 'cache_peer %s parent %s 0 no-query\
-      \ originserver name=dify_sandbox\\n' \\\n            \"$$sandbox_proxy_host\" \\\n            \"$$sandbox_proxy_target_port\"\n        printf 'acl dify_sandbox_proxy_port localport %s\\n' \"$$SSRF_SANDBOX_PROXY_PORT\"\
-      \n        printf 'http_access allow dify_sandbox_proxy_port\\n'\n    } >> \"$$SANDBOX_PROXY_CONF\"\nfi\n\n# Replace environment variables in a template file.\nexpand_env() {\n    awk '{\n        while(match($$0,\
-      \ /\\$${[A-Za-z_][A-Za-z_0-9]*}/)) {\n            var = substr($$0, RSTART+2, RLENGTH-3)\n            val = ENVIRON[var]\n            $$0 = substr($$0, 1, RSTART-1) val substr($$0, RSTART+RLENGTH)\n\
-      \        }\n        print\n    }' \"$$1\"\n}\n\n# Replace environment variables in the templates and output to squid.conf\necho \"[ENTRYPOINT] replacing environment variables in the templates\"\n\
-      expand_env /etc/squid/squid.conf.template > /etc/squid/squid.conf\nexpand_env /etc/squid/dify_common.conf.template > /etc/squid/dify_common.conf\n\n/usr/sbin/squid -Nz\necho \"[ENTRYPOINT] starting\
-      \ squid\"\n/usr/sbin/squid -f /etc/squid/squid.conf -NYC 1\n"
-  sandbox_config:
-    content: "app:\n  port: 8194\n  debug: True\n  key: dify-sandbox\nmax_workers: 4\nmax_requests: 50\nworker_timeout: 5\nenable_network: True # please make sure there is no network risk in your environment\n\
-      allowed_syscalls: # please leave it empty if you have no idea how seccomp works\nproxy:\n  socks5: ''\n  http: ''\n  https: ''\n"
-  nginx_default_conf_template:
-    content: "# Please do not directly edit this file. Instead, modify the .env variables related to NGINX configuration.\n\nserver {\n    listen $${NGINX_PORT};\n    server_name $${NGINX_SERVER_NAME};\n\
-      \    resolver 127.0.0.11 valid=30s ipv6=off;\n\n    location /console/api {\n      set $$api_upstream api:5001;\n      proxy_pass http://$$api_upstream;\n      include proxy.conf;\n    }\n\n    location\
-      \ /api {\n      set $$api_upstream api:5001;\n      proxy_pass http://$$api_upstream;\n      include proxy.conf;\n    }\n\n    location /socket.io/ {\n      set $$socket_io_upstream $${NGINX_SOCKET_IO_UPSTREAM};\n\
-      \      proxy_pass http://$$socket_io_upstream;\n      include proxy.conf;\n      proxy_set_header Upgrade $$http_upgrade;\n      proxy_set_header Connection \"upgrade\";\n      proxy_cache_bypass\
-      \ $$http_upgrade;\n    }\n\n    location /v1 {\n      set $$api_upstream api:5001;\n      proxy_pass http://$$api_upstream;\n      include proxy.conf;\n    }\n\n    location /openapi {\n      set\
-      \ $$api_upstream api:5001;\n      proxy_pass http://$$api_upstream;\n      include proxy.conf;\n    }\n\n    location /files {\n      set $$api_upstream api:5001;\n      proxy_pass http://$$api_upstream;\n\
-      \      include proxy.conf;\n    }\n\n    location /explore {\n      set $$web_upstream web:3000;\n      proxy_pass http://$$web_upstream;\n      include proxy.conf;\n    }\n\n    location /e/ {\n\
-      \      set $$plugin_daemon_upstream plugin_daemon:5002;\n      proxy_pass http://$$plugin_daemon_upstream;\n      proxy_set_header Dify-Hook-Url $$scheme://$$host$$request_uri;\n      include proxy.conf;\n\
-      \    }\n\n    location / {\n      set $$web_upstream web:3000;\n      proxy_pass http://$$web_upstream;\n      include proxy.conf;\n    }\n\n    location /mcp {\n      set $$api_upstream api:5001;\n\
-      \      proxy_pass http://$$api_upstream;\n      include proxy.conf;\n    }\n\n    location /triggers {\n      set $$api_upstream api:5001;\n      proxy_pass http://$$api_upstream;\n      include proxy.conf;\n\
-      \    }\n    \n    # placeholder for acme challenge location\n    $${ACME_CHALLENGE_LOCATION}\n\n    # placeholder for https config defined in https.conf.template\n    $${HTTPS_CONFIG}\n}\n"
+  secret_key: {}
+  sandbox_conf: {}
