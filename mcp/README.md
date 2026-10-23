@@ -11,7 +11,7 @@ written to disk and only paths come back.
 | Tool | Args | Returns |
 |------|------|---------|
 | `draft_application` | `job_ad: str`, `prep_interview: bool = false` | `run_dir`, `files` (paths to `cv.md`, `cover-letter.md`, `interview-prep.md`), `workflow_run_id`, `elapsed_time` |
-| `check_ssot` | — | `ok`, section presence + entry counts, `warnings`. Never returns field values |
+| `check_ssot` | — | `ok`, section presence + entry counts, `pii_source` (`inline` vs `env:PII_JSON`), `warnings`. Never returns field values |
 
 ## Setup
 
