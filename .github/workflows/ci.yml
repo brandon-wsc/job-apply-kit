@@ -77,3 +77,15 @@ jobs:
                   bad = 1
           sys.exit(bad)
           EOF
+
+  mcp-tests:
+    name: MCP unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r mcp/requirements.txt pytest
+      - name: Run mcp tests
+        run: python -m pytest mcp/test_server.py
