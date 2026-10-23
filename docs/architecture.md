@@ -46,7 +46,7 @@
    (`ok=false`) rather than failing the run — downstream prompts stay usable
    and the failure is observable.
 
-4. **Keys live in env / provider settings only.** `SECRET_KEY`, `OPENAI_API_KEY`
+5. **Keys live in env / provider settings only.** `SECRET_KEY`, `OPENAI_API_KEY`
    (or Azure), and `SSOT_API_TOKEN` come from `.env` or Dify → Settings →
    Model Provider. Nothing secret is baked into the DSL — an exported
    `job-to-cv.yml` stays safe to commit after review.
@@ -59,7 +59,7 @@
 | Define the workflow | Manual once: Studio → Import DSL → `job-to-cv.yml`, then Publish |
 | Automate setup (unofficial) | Dify has no public build-plane API, but the web console's internal `/console/api` is scriptable: `POST /console/api/login` (password is Base64-encoded) → cookies + `X-CSRF-TOKEN` header → `POST /console/api/apps/imports` (`{mode: "yaml-content", yaml_content, app_id?}`) → `POST /console/api/apps/{id}/workflows/publish` → `POST /console/api/apps/{id}/api-keys`. Used to bootstrap this repo's workflow; brittle across versions. **Never commit admin credentials or login scripts containing them to the repo** — keep them local-only (e.g. `.env`, which is gitignored). |
 | Secrets | `.env` for infra keys; app API key per published app |
-| MCP server | `mcp/server.py` — thin client over the service API. Tools take only `job_ad`; the SSOT is loaded from `SSOT_PATH` server-side and outputs are written to `OUTPUT_DIR` (paths returned, never contents), so PII stays out of the host agent's context too |
+| MCP server | `mcp/server.py` — thin client over the service API. Tools take only `job_ad`; the SSOT is loaded from `SSOT_PATH` server-side and outputs are written to `OUTPUT_DIR` (paths returned, never contents), so PII stays out of the host agent's context too. This boundary is agent-context only — the full `ssot_json` is still sent to Dify |
 
 ## Local deployment (reference)
 
