@@ -36,6 +36,8 @@ services:
         required: true
       init-assets:
         condition: service_completed_successfully
+      init-perms:
+        condition: service_completed_successfully
     environment:
       AGENT_BACKEND_API_TOKEN: dify-agent-run-token-for-dev-only
       AGENT_BACKEND_BASE_URL: http://agent_backend:5050
@@ -328,6 +330,8 @@ services:
         condition: service_started
         required: true
       init-assets:
+        condition: service_completed_successfully
+      init-perms:
         condition: service_completed_successfully
     environment:
       AGENT_BACKEND_BASE_URL: http://agent_backend:5050
@@ -1600,6 +1604,8 @@ services:
         required: true
       init-assets:
         condition: service_completed_successfully
+      init-perms:
+        condition: service_completed_successfully
     environment:
       AGENT_BACKEND_API_TOKEN: dify-agent-run-token-for-dev-only
       AGENT_BACKEND_BASE_URL: http://agent_backend:5050
@@ -2175,6 +2181,18 @@ services:
     restart: 'no'
     environment:
       SANDBOX_CONF_B64: YXBwOgogIHBvcnQ6IDgxOTQKICBkZWJ1ZzogVHJ1ZQogIGtleTogZGlmeS1zYW5kYm94Cm1heF93b3JrZXJzOiA0Cm1heF9yZXF1ZXN0czogNTAKd29ya2VyX3RpbWVvdXQ6IDUKZW5hYmxlX25ldHdvcms6IFRydWUgIyBwbGVhc2UgbWFrZSBzdXJlIHRoZXJlIGlzIG5vIG5ldHdvcmsgcmlzayBpbiB5b3VyIGVudmlyb25tZW50CmFsbG93ZWRfc3lzY2FsbHM6ICMgcGxlYXNlIGxlYXZlIGl0IGVtcHR5IGlmIHlvdSBoYXZlIG5vIGlkZWEgaG93IHNlY2NvbXAgd29ya3MKcHJveHk6CiAgc29ja3M1OiAnJwogIGh0dHA6ICcnCiAgaHR0cHM6ICcnCg==
+  init-perms:
+    image: busybox:latest
+    command:
+    - /bin/sh
+    - -c
+    - chown -R 1001:1001 /storage
+    volumes:
+    - type: volume
+      source: app_storage
+      target: /storage
+      volume: {}
+    restart: 'no'
 networks:
   ssrf_proxy_network:
     driver: bridge
