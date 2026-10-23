@@ -74,6 +74,28 @@ your real SSOT (incl. PII) is read from a local path server-side, and generated
 documents are written to disk rather than returned through the agent context.
 Setup and host config: `mcp/README.md`.
 
+## Deploy on a Docker host
+
+This repo ships no image of its own — deploying means running the Dify stack on
+any Docker host (NAS, VPS, home server) and pointing your client at it.
+
+1. Copy the **whole** `dify/docker/` directory to the host — the compose file
+   uses bind-mounted config and volume dirs, so the YAML alone is not enough.
+2. Edit `.env` on the host:
+   - `SECRET_KEY` — required (`openssl rand -base64 42`)
+   - `EXPOSE_NGINX_PORT` / `EXPOSE_NGINX_SSL_PORT` — change if 80/443 are taken
+     (e.g. `8080`/`8443` when the host OS already owns them)
+3. Start the stack. Budget **~8 GB free RAM** — under ~4 GB the API container is
+   OOM-killed during DB migrations. x86_64 hosts only.
+4. Open `http://<host>:<port>/install`, then follow quick start steps 2–4.
+5. Keep the MCP server on your workstation and set
+   `DIFY_BASE_URL=http://<host>:<port>/v1` — your `ssot.json` (PII included)
+   never leaves the client machine.
+
+Optional HTTPS: put the host's own reverse proxy in front of the nginx port and
+set `CONSOLE_API_URL`/`APP_API_URL` in `.env` accordingly so generated links are
+correct.
+
 ## What is NOT included
 
 - No real résumés, identities, or career data — the example SSOT is fictional.
