@@ -74,6 +74,40 @@ your real SSOT (incl. PII) is read from a local path server-side, and generated
 documents are written to disk rather than returned through the agent context.
 Setup and host config: `mcp/README.md`.
 
+## Deploy on a Docker host
+
+This repo ships no image of its own — deploying means running the Dify stack on
+any Docker host (NAS, VPS, home server) and pointing your client at it.
+
+**Single-file option** — `docker-compose.yml` in this repo is a self-contained
+Dify 1.17.1 stack (generated from the upstream compose: nginx/squid/sandbox
+configs inlined, data in named volumes, no `.env` needed). Paste it into a
+compose UI (e.g. Synology Container Manager → Project) or run
+`docker compose up -d`. It's a convenience snapshot pinned to 1.17.1, not a
+maintained deployment fork — to upgrade Dify, redeploy from that release's
+upstream compose. Before starting, edit two things in the file:
+
+- `SECRET_KEY: CHANGE_ME_TO_A_LONG_RANDOM_STRING` → `openssl rand -base64 42`
+- nginx `ports:` — published as `8080`/`8443` so they don't clash with a host
+  that already owns 80/443
+
+**Upstream option** — clone `langgenius/dify`, copy the **whole** `dify/docker/`
+directory (bind-mounted config dirs mean the YAML alone is not enough), then
+edit `.env` (`SECRET_KEY`, `EXPOSE_NGINX_PORT`/`EXPOSE_NGINX_SSL_PORT`).
+
+Either way:
+
+3. Budget **~8 GB free RAM** — under ~4 GB the API container is OOM-killed
+   during DB migrations. x86_64 hosts only.
+4. Open `http://<host>:<port>/install`, then follow quick start steps 2–4.
+5. Keep the MCP server on your workstation and set
+   `DIFY_BASE_URL=http://<host>:<port>/v1` — your `ssot.json` (PII included)
+   never leaves the client machine.
+
+Optional HTTPS: put the host's own reverse proxy in front of the nginx port and
+set `CONSOLE_API_URL`/`APP_API_URL` in `.env` accordingly so generated links are
+correct.
+
 ## What is NOT included
 
 - No real résumés, identities, or career data — the example SSOT is fictional.
