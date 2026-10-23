@@ -24,7 +24,7 @@
 # from that release's docker/docker-compose.yaml (same transform) rather
 # than editing this file.
 
-name: dify
+name: job-apply-kit
 services:
   api:
     depends_on:
