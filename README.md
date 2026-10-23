@@ -81,15 +81,14 @@ any Docker host (NAS, VPS, home server) and pointing your client at it.
 
 **Single-file option** — `docker-compose.yml` in this repo is a self-contained
 Dify 1.17.1 stack (generated from the upstream compose: nginx/squid/sandbox
-configs inlined, data in named volumes, no `.env` needed). Paste it into a
+config files embedded, data in named volumes, no `.env` needed). Paste it into a
 compose UI (e.g. Synology Container Manager → Project) or run
 `docker compose up -d`. It's a convenience snapshot pinned to 1.17.1, not a
 maintained deployment fork — to upgrade Dify, redeploy from that release's
-upstream compose. Before starting, edit two things in the file:
-
-- `SECRET_KEY: CHANGE_ME_TO_A_LONG_RANDOM_STRING` → `openssl rand -base64 42`
-- nginx `ports:` — published as `8080`/`8443` so they don't clash with a host
-  that already owns 80/443
+upstream compose. `SECRET_KEY` is auto-generated once by an `init-secret`
+service into a named volume — nothing to set. Before starting, check nginx
+`ports:` — published as `8080`/`8443` so they don't clash with a host that
+already owns 80/443.
 
 **Upstream option** — clone `langgenius/dify`, copy the **whole** `dify/docker/`
 directory (bind-mounted config dirs mean the YAML alone is not enough), then
