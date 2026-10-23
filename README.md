@@ -6,8 +6,11 @@ tailored **CV + cover letter**, with optional **interview prep**.
 The core idea: your **single source of truth (SSOT)** for career data lives *outside*
 the LLM. The workflow consumes a **redacted** version of your profile, generates
 documents against the job description, and a **Code step merges real PII back in**
-after generation. No personal data is ever embedded, indexed, or sent to a model
-provider in raw form.
+after generation. Contact PII under `identity.pii` is stripped before any LLM node
+and is never embedded or indexed. The rest of the profile is **not** anonymized:
+the redacted career narrative (experience, skills, projects) still goes to your
+configured model provider (e.g. OpenRouter), and the full `ssot_json` still enters
+your self-hosted Dify when running the workflow or MCP.
 
 ## Requirements
 
@@ -72,6 +75,8 @@ provider in raw form.
 `mcp/server.py` wraps the service API so an agent only ever sends the job ad —
 your real SSOT (incl. PII) is read from a local path server-side, and generated
 documents are written to disk rather than returned through the agent context.
+In other words: MCP keeps the SSOT out of the *agent* context — it does **not**
+keep it out of Dify, which still receives the full profile as `ssot_json`.
 Setup and host config: `mcp/README.md`.
 
 ## Deploy on a Docker host
@@ -101,7 +106,8 @@ Either way:
 4. Open `http://<host>:<port>/install`, then follow quick start steps 2–4.
 5. Keep the MCP server on your workstation and set
    `DIFY_BASE_URL=http://<host>:<port>/v1` — your `ssot.json` (PII included)
-   never leaves the client machine.
+   is read on the client and sent straight to Dify; it never passes through
+   the agent context.
 
 Optional HTTPS: put the host's own reverse proxy in front of the nginx port and
 set `CONSOLE_API_URL`/`APP_API_URL` in `.env` accordingly so generated links are
