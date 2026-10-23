@@ -2,8 +2,9 @@
 
 Design contract (see docs/architecture.md):
 - The tool surface accepts only the job ad plus flags. The candidate SSOT
-  (including PII) is read from local storage server-side and injected into
-  the workflow inputs, so raw PII never enters the calling agent's context.
+  (PII-free career data; PII lives in the Dify app env var PII_JSON) is read
+  from local storage server-side and injected into the workflow inputs, so
+  raw PII never enters the calling agent's context.
 - Generated documents contain merged PII, so they are written to OUTPUT_DIR
   and only paths are returned to the caller.
 """
@@ -136,8 +137,10 @@ def draft_application(job_ad: str, prep_interview: bool = False) -> dict[str, An
 def check_ssot() -> dict[str, Any]:
     """Validate the SSOT file configured via SSOT_PATH.
 
-    Reports which sections exist and how many entries each list holds.
-    Field values are never returned, so no PII enters the agent context.
+    Reports which sections exist and how many entries each list holds, plus
+    where the merge step will source PII (inline identity.pii or the PII_JSON
+    app env var). Field values are never returned, so no PII enters the agent
+    context.
     """
     cfg = _config()
     try:
@@ -155,13 +158,14 @@ def check_ssot() -> dict[str, Any]:
             sections[key] = f"{len(val)} entr{'y' if len(val) == 1 else 'ies'}"
         else:
             sections[key] = "present"
-    if not isinstance((ssot.get("identity") or {}).get("pii"), dict) or not ssot["identity"]["pii"]:
-        warnings.append("identity.pii is empty or missing — nothing for the merge step to restore")
+    pii = (ssot.get("identity") or {}).get("pii")
+    pii_source = "inline" if isinstance(pii, dict) and pii else "env:PII_JSON"
 
     return {
         "ok": not warnings,
         "path": str(cfg["ssot_path"]),
         "schema_version": ssot.get("schema_version"),
+        "pii_source": pii_source,
         "sections": sections,
         "extra_keys": sorted(set(ssot) - set(_SSOT_SECTIONS) - {"_comment", "schema_version"}),
         "warnings": warnings,

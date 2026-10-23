@@ -4,12 +4,13 @@ Open-source skeleton for a **self-hosted Dify Workflow** that turns a job ad int
 tailored **CV + cover letter**, with optional **interview prep**.
 
 The core idea: your **single source of truth (SSOT)** for career data lives *outside*
-the LLM. The workflow consumes a **redacted** version of your profile, generates
-documents against the job description, and a **Code step merges real PII back in**
-after generation. Contact PII under `identity.pii` is stripped before any LLM node
-and is never embedded or indexed. The rest of the profile is **not** anonymized:
-the redacted career narrative (experience, skills, projects) still goes to your
-configured model provider (e.g. OpenRouter), and the full `ssot_json` still enters
+the LLM, and your contact **PII lives in a `PII_JSON` app env var** (secret) inside
+Dify — never in the profile file at all. The workflow consumes the PII-free profile,
+generates documents with placeholders, and a **Code step merges real PII back in**
+after generation. Any stray `identity.pii` in the profile is still stripped as a
+guard, and PII is never embedded or indexed. The rest of the profile is **not**
+anonymized: the career narrative (experience, skills, projects) still goes to your
+configured model provider (e.g. OpenRouter), and the PII-free `ssot_json` still enters
 your self-hosted Dify when running the workflow or MCP.
 
 ## Requirements
@@ -46,7 +47,12 @@ your self-hosted Dify when running the workflow or MCP.
    `job-to-cv.yml.example` file documents the node/variable design for readers
    who want to build it by hand.
 
-4. **Publish the app and create an API key** — the workflow can then be driven
+4. **Set `PII_JSON` in the app** — open the imported app → ⋯ → *Environment
+   Variables* → set `PII_JSON` (type **secret**) to your identity object in the
+   shape of `examples/pii.example.json`. This is what the merge step writes back
+   into generated documents; it never reaches an LLM node.
+
+5. **Publish the app and create an API key** — the workflow can then be driven
    via the Dify service API:
 
    ```bash
@@ -64,19 +70,21 @@ your self-hosted Dify when running the workflow or MCP.
      }'
    ```
 
-   `ssot_json` is the **full** profile — the workflow's `redact` Code node strips
-   `identity.pii` before any LLM call and merges it back afterwards.
+   `ssot_json` is the **PII-free** profile — real PII comes from `PII_JSON`; any
+   `identity.pii` still in the input is stripped by the `redact` Code node before
+   any LLM call.
 
-5. **Try the examples** — `examples/job-ad.md` + `examples/ssot.example.json`
-   (fake identity only) are ready to paste in.
+6. **Try the examples** — `examples/job-ad.md` + `examples/ssot.example.json` +
+   `examples/pii.example.json` (fake identity only) are ready to paste in.
 
 ### Optional: drive it via MCP
 
 `mcp/server.py` wraps the service API so an agent only ever sends the job ad —
-your real SSOT (incl. PII) is read from a local path server-side, and generated
+your PII-free SSOT is read from a local path server-side, and generated
 documents are written to disk rather than returned through the agent context.
 In other words: MCP keeps the SSOT out of the *agent* context — it does **not**
-keep it out of Dify, which still receives the full profile as `ssot_json`.
+keep it out of Dify, which still receives the career profile as `ssot_json`
+(PII stays in `PII_JSON`).
 Setup and host config: `mcp/README.md`.
 
 ## Deploy on a Docker host
@@ -105,7 +113,7 @@ Either way:
    during DB migrations. x86_64 hosts only.
 4. Open `http://<host>:<port>/install`, then follow quick start steps 2–4.
 5. Keep the MCP server on your workstation and set
-   `DIFY_BASE_URL=http://<host>:<port>/v1` — your `ssot.json` (PII included)
+   `DIFY_BASE_URL=http://<host>:<port>/v1` — your `ssot.json` (PII-free)
    is read on the client and sent straight to Dify; it never passes through
    the agent context.
 

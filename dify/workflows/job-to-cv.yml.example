@@ -18,10 +18,18 @@ meta:
 # ── Inputs (Start node variables) ────────────────────────────────────────
 inputs:
   job_ad:                 # string, required — raw job ad text (see examples/job-ad.md)
-  redacted_ssot:          # string(JSON), required if no SSOT fetch step —
-                        #   profile with PII already stripped (see examples/ssot.example.json)
+  ssot_json:              # string(JSON), required if no SSOT fetch step —
+                        #   PII-free profile (see examples/ssot.example.json);
+                        #   identity.pii lives in the PII_JSON env var instead
   ssot_id:                # string, optional — lookup key if fetching SSOT via HTTP node
   prep_interview:         # boolean, optional, default false — also emit interview prep
+
+# ── App environment variables ────────────────────────────────────────────
+env:
+  PII_JSON:               # secret — identity.pii JSON (see examples/pii.example.json);
+                        #   merged back after generation, never reaches LLM nodes
+  SSOT_BASE_URL:          # optional — only if using fetch_ssot node
+  SSOT_API_TOKEN:         # optional — bearer token for fetch_ssot
 
 # ── Nodes (intended, in order) ───────────────────────────────────────────
 nodes:
@@ -32,9 +40,11 @@ nodes:
 
   - id: redact_profile    # Code node (python)
     type: code
-    in: [raw_ssot | redacted_ssot]
+    in: [raw_ssot | ssot_json, env.PII_JSON]
     out: { redacted_ssot, pii_map }   # pii_map: {"{{NAME}}": "Real Name", ...}
-    note: strip identity.pii → placeholder tokens; keep pii_map for merge step
+    note: strip any inline identity.pii (guard) → placeholder tokens; the
+          placeholder list is file ∪ env fields; pii_map holds file-derived
+          values only
 
   - id: extract_requirements   # LLM node
     type: llm
@@ -75,10 +85,10 @@ nodes:
 
   - id: merge_pii              # Code node (python) — runs AFTER all LLM nodes
     type: code
-    in: [cv_md, cover_letter_md, interview_prep_md?, pii_map]
+    in: [cv_md, cover_letter_md, interview_prep_md?, pii_map, env.PII_JSON]
     out: [cv_md, cover_letter_md, interview_prep_md]
     note: placeholder → real PII substitution happens here, inside Dify,
-          not in any model context
+          not in any model context. PII source: PII_JSON env ?? pii_map.
 
 # ── Outputs (End node) ───────────────────────────────────────────────────
 outputs:
@@ -87,7 +97,10 @@ outputs:
   interview_prep_md:  # string | absent unless prep_interview
 
 # ── Notes ────────────────────────────────────────────────────────────────
-# * The LLM only ever sees `redacted_ssot` — never raw PII, never the pii_map.
+# * The LLM only ever sees `redacted_ssot` — never raw PII, never the pii_map,
+#   never the PII_JSON env value.
 # * `pii_map` must be carried as an intermediate variable only; do NOT pass it
 #   into any LLM node's prompt/context.
+# * PII canonical home is the PII_JSON app env var (secret) — keeping it out of
+#   the ssot_json input also keeps it out of Dify's run history.
 # * No Knowledge/retrieval nodes: nothing here is embedded into a vector store.

@@ -1,19 +1,8 @@
 {
-  "_comment": "FAKE identity for development only. Replace with your own SSOT served from private storage — never commit real data. Fields under `identity.pii` are redacted before the LLM sees the profile and merged back after generation.",
+  "_comment": "FAKE identity for development only. Replace with your own SSOT — never commit real data. PII is kept out of this file: it lives in the Dify app env var PII_JSON (see examples/pii.example.json). If identity.pii is present anyway, the workflow strips it before the LLM sees the profile as a fallback.",
   "schema_version": "0.1",
   "identity": {
     "id": "cand_demo_001",
-    "pii": {
-      "full_name": "Alex Demo",
-      "email": "alex.demo@example.com",
-      "phone": "+1-555-0100",
-      "location": "Toronto, ON",
-      "links": {
-        "linkedin": "https://linkedin.com/in/alex-demo",
-        "github": "https://github.com/alex-demo",
-        "portfolio": "https://alexdemo.example.com"
-      }
-    },
     "public": {
       "first_name_initial": "A.",
       "years_experience": 6,

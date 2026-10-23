@@ -59,6 +59,7 @@ def test_check_ssot_ok(cfg_env):
     assert result["ok"]
     assert result["sections"]["experience"] == "2 entries"
     assert result["sections"]["identity"] == "present"
+    assert result["pii_source"] == "env:PII_JSON"
     assert "alex.demo@example.com" not in json.dumps(result)
 
 
@@ -69,14 +70,15 @@ def test_check_ssot_missing_file(tmp_path, monkeypatch):
     assert result["warnings"]
 
 
-def test_check_ssot_warns_without_pii(tmp_path, monkeypatch):
-    bare = {k: v for k, v in EXAMPLE_SSOT.items() if k != "_comment"}
-    bare["identity"] = {"id": "x", "public": {}}
+def test_check_ssot_inline_pii(tmp_path, monkeypatch):
+    inline = json.loads(json.dumps(EXAMPLE_SSOT))
+    inline["identity"]["pii"] = {"full_name": "Alex Demo", "email": "alex.demo@example.com"}
     f = tmp_path / "ssot.json"
-    f.write_text(json.dumps(bare))
+    f.write_text(json.dumps(inline))
     monkeypatch.setenv("SSOT_PATH", str(f))
     result = server.check_ssot()
-    assert any("identity.pii" in w for w in result["warnings"])
+    assert result["pii_source"] == "inline"
+    assert "alex.demo@example.com" not in json.dumps(result)
 
 
 def test_draft_application_writes_files(cfg_env, monkeypatch):
@@ -87,7 +89,7 @@ def test_draft_application_writes_files(cfg_env, monkeypatch):
     sent = payloads[0]["inputs"]
     assert sent["prep_interview"] == "yes"
     assert sent["job_ad"].startswith("We are hiring")
-    assert json.loads(sent["ssot_json"])["identity"]["pii"]["full_name"] == "Alex Demo"
+    assert "pii" not in json.loads(sent["ssot_json"])["identity"]
     assert payloads[0]["response_mode"] == "blocking"
 
     assert Path(result["files"]["cv_md"]).read_text().startswith("# CV")

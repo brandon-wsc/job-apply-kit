@@ -1,0 +1,12 @@
+{
+  "_comment": "FAKE identity PII — set this as the Dify app environment variable PII_JSON (type: secret) in the console, not in this repo. Never commit real values.",
+  "full_name": "Alex Demo",
+  "email": "alex.demo@example.com",
+  "phone": "+1-555-0100",
+  "location": "Toronto, ON",
+  "links": {
+    "linkedin": "https://linkedin.com/in/alex-demo",
+    "github": "https://github.com/alex-demo",
+    "portfolio": "https://alexdemo.example.com"
+  }
+}

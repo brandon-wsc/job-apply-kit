@@ -18,7 +18,13 @@ kind: app
 version: 0.7.0
 workflow:
   conversation_variables: []
-  environment_variables: []
+  environment_variables:
+  - description: identity.pii JSON merged back after generation; never reaches LLM
+      nodes.
+    id: 2ff5e6ff-f215-49b6-9da5-d8f632e5f5a9
+    name: PII_JSON
+    value: ''
+    value_type: secret
   features:
     file_upload: {}
     opening_statement: ''
@@ -221,8 +227,8 @@ workflow:
           type: paragraph
           variable: job_ad
         - default: ''
-          hint: Full candidate SSOT JSON (see examples/ssot.example.json). PII is
-            stripped by the Redact node before any LLM call.
+          hint: Candidate SSOT JSON without identity.pii — PII lives in the PII_JSON
+            app env var. Any identity.pii still present is stripped before LLM calls.
           label: ssot_json
           options: []
           placeholder: ''
@@ -253,20 +259,10 @@ workflow:
       type: custom
       width: 242
     - data:
-        code: "import json\n\ndef main(ssot_json: str) -> dict:\n    ssot = json.loads(ssot_json)\n\
-          \    identity = ssot.get(\"identity\") or {}\n    pii = identity.pop(\"\
-          pii\", {}) or {}\n    links = pii.get(\"links\") or {}\n    pii_map = {}\n\
-          \    for token, val in {\n        \"{{NAME}}\": pii.get(\"full_name\"),\n\
-          \        \"{{EMAIL}}\": pii.get(\"email\"),\n        \"{{PHONE}}\": pii.get(\"\
-          phone\"),\n        \"{{LOCATION}}\": pii.get(\"location\"),\n        \"\
-          {{LINKEDIN}}\": links.get(\"linkedin\"),\n        \"{{GITHUB}}\": links.get(\"\
-          github\"),\n        \"{{PORTFOLIO}}\": links.get(\"portfolio\"),\n    }.items():\n\
-          \        if val:\n            pii_map[token] = val\n    identity[\"pii_placeholders\"\
-          ] = sorted(pii_map.keys())\n    return {\n        \"redacted_ssot\": json.dumps(ssot,\
-          \ indent=2),\n        \"pii_map\": json.dumps(pii_map),\n    }"
+        code: "import json\n\n_FIELDS = {\n    \"full_name\": \"{{NAME}}\",\n    \"email\": \"{{EMAIL}}\",\n    \"phone\": \"{{PHONE}}\",\n    \"location\": \"{{LOCATION}}\",\n    \"linkedin\": \"{{LINKEDIN}}\",\n    \"github\": \"{{GITHUB}}\",\n    \"portfolio\": \"{{PORTFOLIO}}\",\n}\n\ndef _token_map(pii):\n    links = pii.get(\"links\") or {}\n    return {\n        token: val\n        for field, token in _FIELDS.items()\n        for val in [links.get(field) or pii.get(field)]\n        if val\n    }\n\ndef main(ssot_json: str, pii_env: str) -> dict:\n    ssot = json.loads(ssot_json)\n    identity = ssot.get(\"identity\") or {}\n    file_map = _token_map(identity.pop(\"pii\", {}) or {})\n    env_map = _token_map(json.loads(pii_env)) if pii_env else {}\n    identity[\"pii_placeholders\"] = sorted(set(file_map) | set(env_map))\n    return {\n        \"redacted_ssot\": json.dumps(ssot, indent=2),\n        \"pii_map\": json.dumps(file_map),\n    }"
         code_language: python3
         desc: Strip identity.pii into pii_map; LLMs only see redacted_ssot. pii_map
-          must never be referenced in an LLM prompt.
+          and env PII_JSON must never be referenced in an LLM prompt.
         outputs:
           pii_map:
             children: null
@@ -282,6 +278,10 @@ workflow:
           - start
           - ssot_json
           variable: ssot_json
+        - value_selector:
+          - env
+          - PII_JSON
+          variable: pii_env
       height: 88
       id: redact
       position:
@@ -491,12 +491,7 @@ workflow:
       type: custom
       width: 242
     - data:
-        code: "import json\n\ndef main(cv_draft: str, letter_draft: str, pii_map:\
-          \ str) -> dict:\n    mapping = json.loads(pii_map or \"{}\")\n    cv = cv_draft\n\
-          \    letter = letter_draft\n    for token, real in mapping.items():\n  \
-          \      cv = cv.replace(token, real)\n        letter = letter.replace(token,\
-          \ real)\n    return {\n        \"cv_md\": cv,\n        \"cover_letter_md\"\
-          : letter,\n    }"
+        code: "import json\n\n_FIELDS = {\n    \"full_name\": \"{{NAME}}\",\n    \"email\": \"{{EMAIL}}\",\n    \"phone\": \"{{PHONE}}\",\n    \"location\": \"{{LOCATION}}\",\n    \"linkedin\": \"{{LINKEDIN}}\",\n    \"github\": \"{{GITHUB}}\",\n    \"portfolio\": \"{{PORTFOLIO}}\",\n}\n\ndef _token_map(pii):\n    links = pii.get(\"links\") or {}\n    return {\n        token: val\n        for field, token in _FIELDS.items()\n        for val in [links.get(field) or pii.get(field)]\n        if val\n    }\n\ndef main(cv_draft: str, letter_draft: str, pii_map: str, pii_env: str) -> dict:\n    mapping = _token_map(json.loads(pii_env)) if pii_env else json.loads(pii_map or \"{}\")\n    cv = cv_draft\n    letter = letter_draft\n    for token, real in mapping.items():\n        cv = cv.replace(token, real)\n        letter = letter.replace(token, real)\n    return {\n        \"cv_md\": cv,\n        \"cover_letter_md\": letter,\n    }"
         code_language: python3
         desc: Merge real PII back into CV + cover letter. Runs on every path, before
           the prep branch.
@@ -523,6 +518,10 @@ workflow:
           - redact
           - pii_map
           variable: pii_map
+        - value_selector:
+          - env
+          - PII_JSON
+          variable: pii_env
       height: 88
       id: merge_pii
       position:
@@ -618,10 +617,7 @@ workflow:
       type: custom
       width: 242
     - data:
-        code: "import json\n\ndef main(prep_draft: str, pii_map: str) -> dict:\n \
-          \   mapping = json.loads(pii_map or \"{}\")\n    prep = prep_draft\n   \
-          \ for token, real in mapping.items():\n        prep = prep.replace(token,\
-          \ real)\n    return {\"interview_prep_md\": prep}"
+        code: "import json\n\n_FIELDS = {\n    \"full_name\": \"{{NAME}}\",\n    \"email\": \"{{EMAIL}}\",\n    \"phone\": \"{{PHONE}}\",\n    \"location\": \"{{LOCATION}}\",\n    \"linkedin\": \"{{LINKEDIN}}\",\n    \"github\": \"{{GITHUB}}\",\n    \"portfolio\": \"{{PORTFOLIO}}\",\n}\n\ndef _token_map(pii):\n    links = pii.get(\"links\") or {}\n    return {\n        token: val\n        for field, token in _FIELDS.items()\n        for val in [links.get(field) or pii.get(field)]\n        if val\n    }\n\ndef main(prep_draft: str, pii_map: str, pii_env: str) -> dict:\n    mapping = _token_map(json.loads(pii_env)) if pii_env else json.loads(pii_map or \"{}\")\n    prep = prep_draft\n    for token, real in mapping.items():\n        prep = prep.replace(token, real)\n    return {\"interview_prep_md\": prep}"
         code_language: python3
         desc: Merge real PII back into the interview prep notes (prep branch only).
         outputs:
@@ -640,6 +636,10 @@ workflow:
           - redact
           - pii_map
           variable: pii_map
+        - value_selector:
+          - env
+          - PII_JSON
+          variable: pii_env
       height: 88
       id: merge_pii_prep
       position:
