@@ -11,6 +11,9 @@ ssot.json
 ssot.local.json
 **/ssot.*.json
 !**/ssot.example.json
+pii.json
+**/pii.*.json
+!**/pii.example.json
 
 # Generated documents contain merged PII — never commit
 out/
