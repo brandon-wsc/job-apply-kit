@@ -19,11 +19,11 @@
           │         └───────────────────────────┬───────────────────────────┘
           │                                     ▼
           │         ┌───────────────────────────────────────────┐
- PII_JSON │────────▶│  Code node: merge PII back                │
- (env var)│         │  (env.PII_JSON ?? pii_map)                │
-          │         └───────────────────────────┬───────────────┘
-          ▼                                     ▼
-        outputs:  cv_md · cover_letter_md · interview_prep_md?
+ PII_JSON │────────▶│  Code node: merge PII back                │◀─ map_json_resume
+ (env var)│         │  (env.PII_JSON ?? pii_map)                │   (Code node: SSOT +
+          │         └───────────────────────────┬───────────────┘    evidence → JSON
+          ▼                                     ▼                    Resume draft)
+        outputs:  cv_md · cv_json · cover_letter_md · interview_prep_md?
 ```
 
 ## Design rules
@@ -53,6 +53,20 @@
    (or Azure), and `SSOT_API_TOKEN` come from `.env` or Dify → Settings →
    Model Provider. Nothing secret is baked into the DSL — an exported
    `job-to-cv.yml` stays safe to commit after review.
+
+## Output formats
+
+- **`cv_md`** — Markdown CV, kept as the human-facing format (unchanged path).
+- **`cv_json`** — [JSON Resume](https://jsonresume.org/schema/)
+  (`@jsonresume/schema` ~1.x). Built by the `map_json_resume` **Code node** —
+  not an LLM — from the redacted SSOT, filtered/ordered by the picked evidence
+  (`picked_bullets` → `work[].highlights`, `picked_projects` → `projects`,
+  `skill_focus` orders `skills[].keywords`), so no model can invent
+  `resume.json` content. Contact fields carry the same `{{TOKEN}}`
+  placeholders until `merge_pii` substitutes real PII (JSON-escaped) — PII
+  stays env-only in `PII_JSON`. `work[].endDate` is omitted for current roles.
+- **PDF** — planned later via a pinned `resumed` CLI + theme; `cv_json` is the
+  interchange format it will consume. Not included yet.
 
 ## Driving Dify (control plane)
 

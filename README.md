@@ -76,6 +76,8 @@ your self-hosted Dify when running the workflow or MCP.
 
 6. **Try the examples** — `examples/job-ad.md` + `examples/ssot.example.json` +
    `examples/pii.example.json` (fake identity only) are ready to paste in.
+   `examples/cv.json.example` shows a post-merge `cv_json` output (JSON Resume)
+   produced from them.
 
 ### Optional: drive it via MCP
 
@@ -136,6 +138,9 @@ correct.
       end-to-end via `/v1/workflows/run` on Dify 1.17)
 - [x] MCP server to drive the workflow via the Dify service API — see
       `mcp/` (tool surface takes only the job ad; SSOT is injected server-side)
+- [x] JSON Resume export — `cv_json` output built by a Code node from the SSOT
+      (`@jsonresume/schema` ~1.x); interchange for a future pinned
+      `resumed` + theme PDF step
 
 ## License
 

@@ -73,6 +73,14 @@ nodes:
     in: [evidence_json, redacted_ssot]
     out: cv_md                # markdown, PII placeholders intact
 
+  - id: map_json_resume        # Code node — runs in parallel with draft_cv/draft_cl
+    type: code
+    in: [redacted_ssot, evidence_json, requirements_json]
+    out: cv_json_draft        # JSON Resume (~1.x): basics/work/education/skills/
+                              #   projects/meta built from SSOT, filtered/ordered
+                              #   by evidence.picked_*; contact fields stay
+                              #   {{TOKEN}} placeholders; never invents facts
+
   - id: draft_cover_letter     # LLM node
     type: llm
     in: [evidence_json, job_ad, redacted_ssot]
@@ -85,14 +93,16 @@ nodes:
 
   - id: merge_pii              # Code node (python) — runs AFTER all LLM nodes
     type: code
-    in: [cv_md, cover_letter_md, interview_prep_md?, pii_map, env.PII_JSON]
-    out: [cv_md, cover_letter_md, interview_prep_md]
+    in: [cv_md, cover_letter_md, cv_json_draft, pii_map, env.PII_JSON]
+    out: [cv_md, cover_letter_md, cv_json]
     note: placeholder → real PII substitution happens here, inside Dify,
-          not in any model context. PII source: PII_JSON env ?? pii_map.
+          not in any model context. cv_json values are JSON-escaped on
+          substitution. PII source: PII_JSON env ?? pii_map.
 
 # ── Outputs (End node) ───────────────────────────────────────────────────
 outputs:
-  cv_md:              # string
+  cv_md:              # string — markdown CV (kept as the human-facing format)
+  cv_json:            # string(JSON) — JSON Resume, interchange for renderers
   cover_letter_md:    # string
   interview_prep_md:  # string | absent unless prep_interview
 
