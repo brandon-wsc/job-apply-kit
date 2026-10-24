@@ -1270,7 +1270,7 @@ services:
       - curl
       - -f
       - http://localhost:8194/health
-    image: langgenius/dify-sandbox:0.2.15
+    image: langgenius/dify-sandbox:0.2.14
     networks:
       ssrf_proxy_network: null
     restart: always
