@@ -207,7 +207,7 @@ workflow:
       id: e-check-prep-no
       source: check_prep
       sourceHandle: 'false'
-      target: end_pair
+      target: end_full
       targetHandle: target
       type: custom
       zIndex: 0
@@ -672,7 +672,7 @@ workflow:
           value_type: string
           variable: interview_prep_md
         selected: false
-        title: Outputs (with prep)
+        title: Outputs
         type: end
       height: 116
       id: end_full
@@ -682,35 +682,6 @@ workflow:
       positionAbsolute:
         x: 2668
         y: 162
-      selected: false
-      sourcePosition: right
-      targetPosition: left
-      type: custom
-      width: 242
-    - data:
-        desc: ''
-        outputs:
-        - value_selector:
-          - merge_pii
-          - cv_md
-          value_type: string
-          variable: cv_md
-        - value_selector:
-          - merge_pii
-          - cover_letter_md
-          value_type: string
-          variable: cover_letter_md
-        selected: false
-        title: Outputs
-        type: end
-      height: 88
-      id: end_pair
-      position:
-        x: 2668
-        y: 402
-      positionAbsolute:
-        x: 2668
-        y: 402
       selected: false
       sourcePosition: right
       targetPosition: left
