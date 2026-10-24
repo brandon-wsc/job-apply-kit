@@ -12,7 +12,7 @@ dependencies:
 - current_identifier: null
   type: marketplace
   value:
-    marketplace_plugin_unique_identifier: langgenius/openrouter:0.1.10@7a135133ebe75fce9b816f7805b3e62d72db9dc47d7046bf03e8a84afd2324a2
+    marketplace_plugin_unique_identifier: langgenius/openrouter:0.1.11@16e121bde5961b0a4dab636d8769bd70aff14fba80e05e200b30ccb2cf23cec5
     version: null
 kind: app
 version: 0.7.0
