@@ -130,6 +130,18 @@ workflow:
     - data:
         isInIteration: false
         isInLoop: false
+        sourceType: code
+        targetType: code
+      id: e-evidence-mapjson
+      source: parse_evidence
+      sourceHandle: source
+      target: map_json_resume
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
         sourceType: llm
         targetType: code
       id: e-cv-merge
@@ -146,6 +158,18 @@ workflow:
         targetType: code
       id: e-cl-merge
       source: draft_cl
+      sourceHandle: source
+      target: merge_pii
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: code
+        targetType: code
+      id: e-mapjson-merge
+      source: map_json_resume
       sourceHandle: source
       target: merge_pii
       targetHandle: target
@@ -491,12 +515,15 @@ workflow:
       type: custom
       width: 242
     - data:
-        code: "import json\n\n_FIELDS = {\n    \"full_name\": \"{{NAME}}\",\n    \"email\": \"{{EMAIL}}\",\n    \"phone\": \"{{PHONE}}\",\n    \"location\": \"{{LOCATION}}\",\n    \"linkedin\": \"{{LINKEDIN}}\",\n    \"github\": \"{{GITHUB}}\",\n    \"portfolio\": \"{{PORTFOLIO}}\",\n}\n\ndef _token_map(pii):\n    links = pii.get(\"links\") or {}\n    return {\n        token: val\n        for field, token in _FIELDS.items()\n        for val in [links.get(field) or pii.get(field)]\n        if val\n    }\n\ndef _strip_think(text):\n    import re\n    return re.sub(r\"<think>.*?(</think>|$)\", \"\", text or \"\", flags=re.DOTALL).strip()\n\ndef main(cv_draft: str, letter_draft: str, pii_map: str, pii_env: str) -> dict:\n    mapping = _token_map(json.loads(pii_env)) if pii_env else json.loads(pii_map or \"{}\")\n    cv = _strip_think(cv_draft)\n    letter = _strip_think(letter_draft)\n    for token, real in mapping.items():\n        cv = cv.replace(token, real)\n        letter = letter.replace(token, real)\n    return {\n        \"cv_md\": cv,\n        \"cover_letter_md\": letter,\n    }"
+        code: "import json\n\n_FIELDS = {\n    \"full_name\": \"{{NAME}}\",\n    \"email\": \"{{EMAIL}}\",\n    \"phone\": \"{{PHONE}}\",\n    \"location\": \"{{LOCATION}}\",\n    \"linkedin\": \"{{LINKEDIN}}\",\n    \"github\": \"{{GITHUB}}\",\n    \"portfolio\": \"{{PORTFOLIO}}\",\n}\n\ndef _token_map(pii):\n    links = pii.get(\"links\") or {}\n    return {\n        token: val\n        for field, token in _FIELDS.items()\n        for val in [links.get(field) or pii.get(field)]\n        if val\n    }\n\ndef _strip_think(text):\n    import re\n    return re.sub(r\"<think>.*?(</think>|$)\", \"\", text or \"\", flags=re.DOTALL).strip()\n\ndef main(cv_draft: str, letter_draft: str, json_draft: str, pii_map: str, pii_env: str) -> dict:\n    mapping = _token_map(json.loads(pii_env)) if pii_env else json.loads(pii_map or \"{}\")\n    cv = _strip_think(cv_draft)\n    letter = _strip_think(letter_draft)\n    cv_json = _strip_think(json_draft)\n    for token, real in mapping.items():\n        cv = cv.replace(token, real)\n        letter = letter.replace(token, real)\n        cv_json = cv_json.replace(token, json.dumps(real)[1:-1])\n    return {\n        \"cv_md\": cv,\n        \"cover_letter_md\": letter,\n        \"cv_json\": cv_json,\n    }"
         code_language: python3
-        desc: Merge real PII back into CV + cover letter. Runs on every path, before
-          the prep branch.
+        desc: Merge real PII back into CV markdown, cover letter, and the JSON
+          Resume draft. Runs on every path, before the prep branch.
         outputs:
           cover_letter_md:
+            children: null
+            type: string
+          cv_json:
             children: null
             type: string
           cv_md:
@@ -514,6 +541,10 @@ workflow:
           - draft_cl
           - text
           variable: letter_draft
+        - value_selector:
+          - map_json_resume
+          - cv_json_draft
+          variable: json_draft
         - value_selector:
           - redact
           - pii_map
@@ -667,6 +698,11 @@ workflow:
           value_type: string
           variable: cover_letter_md
         - value_selector:
+          - merge_pii
+          - cv_json
+          value_type: string
+          variable: cv_json
+        - value_selector:
           - merge_pii_prep
           - interview_prep_md
           value_type: string
@@ -763,6 +799,46 @@ workflow:
         y: 540
       positionAbsolute:
         x: 1208
+        y: 540
+      selected: false
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 242
+    - data:
+        code: "import json\n\n\ndef _load(text):\n    try:\n        obj = json.loads(text or \"\")\n        return obj if isinstance(obj, dict) else {}\n    except Exception:\n        return {}\n\n\ndef _picked_order(items):\n    order, seen = [], set()\n    for it in items or []:\n        pid = it.get(\"source_id\") or it.get(\"id\")\n        if pid and pid not in seen:\n            seen.add(pid)\n            order.append(pid)\n    return order\n\n\ndef _clean(d):\n    return {k: v for k, v in d.items() if v not in (None, \"\", [], {})}\n\n\ndef main(redacted_ssot: str, evidence_json: str, requirements_json: str) -> dict:\n    ssot = _load(redacted_ssot)\n    evidence = _load(evidence_json)\n    reqs = _load(requirements_json)\n\n    public = (ssot.get(\"identity\") or {}).get(\"public\") or {}\n    basics = _clean({\n        \"name\": \"{{NAME}}\",\n        \"label\": public.get(\"headline\"),\n        \"email\": \"{{EMAIL}}\",\n        \"phone\": \"{{PHONE}}\",\n        \"url\": \"{{PORTFOLIO}}\",\n        \"location\": {\"address\": \"{{LOCATION}}\"},\n        \"profiles\": [\n            {\"network\": \"LinkedIn\", \"url\": \"{{LINKEDIN}}\"},\n            {\"network\": \"GitHub\", \"url\": \"{{GITHUB}}\"},\n        ],\n    })\n\n    picked = evidence.get(\"picked_bullets\") or []\n    exp = {e.get(\"id\"): e for e in ssot.get(\"experience\") or []}\n    work = []\n    for sid in _picked_order(picked):\n        e = exp.get(sid)\n        if not e:\n            continue\n        item = _clean({\n            \"name\": e.get(\"company\"),\n            \"position\": e.get(\"title\"),\n            \"startDate\": e.get(\"start\"),\n            \"endDate\": e.get(\"end\"),\n            \"highlights\": [b.get(\"text\") for b in picked\n                           if (b.get(\"source_id\") or b.get(\"id\")) == sid and b.get(\"text\")],\n        })\n        work.append(item)\n\n    education = [\n        _clean({\n            \"institution\": ed.get(\"school\"),\n            \"studyType\": ed.get(\"degree\"),\n            \"endDate\": ed.get(\"end\"),\n        })\n        for ed in ssot.get(\"education\") or []\n    ]\n\n    focus = {s.lower() for s in evidence.get(\"skill_focus\") or []}\n    skills = [\n        {\"name\": cat, \"keywords\": sorted(kws, key=lambda k: k.lower() not in focus)}\n        for cat, kws in (ssot.get(\"skills\") or {}).items()\n        if isinstance(kws, list)\n    ]\n\n    ssot_proj = {p.get(\"id\"): p for p in ssot.get(\"projects\") or []}\n    projects = []\n    for pid in _picked_order(evidence.get(\"picked_projects\")):\n        p = ssot_proj.get(pid)\n        if not p:\n            continue\n        item = _clean({\n            \"name\": p.get(\"name\"),\n            \"url\": p.get(\"url\"),\n            \"description\": p.get(\"summary\"),\n            \"keywords\": p.get(\"tags\"),\n        })\n        why = next((x.get(\"why\") for x in evidence.get(\"picked_projects\") or []\n                    if x.get(\"id\") == pid), None)\n        if why:\n            item[\"highlights\"] = [why]\n        projects.append(item)\n\n    resume = {\n        \"$schema\": \"https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json\",\n        \"basics\": basics,\n        \"work\": work,\n        \"education\": education,\n        \"skills\": skills,\n        \"projects\": projects,\n        \"meta\": _clean({\n            \"generator\": \"job-apply-kit\",\n            \"application\": _clean({\n                \"role_title\": reqs.get(\"role_title\"),\n                \"company\": reqs.get(\"company\"),\n                \"seniority\": reqs.get(\"seniority\"),\n            }),\n        }),\n    }\n    return {\"cv_json_draft\": json.dumps(resume, indent=2)}\n"
+        code_language: python3
+        desc: Build a JSON Resume draft (basics/work/education/skills/projects +
+          meta) from the redacted SSOT, filtered and ordered by the picked
+          evidence. Contact fields stay placeholder tokens; real PII is merged
+          back in Merge PII. Never invents facts.
+        outputs:
+          cv_json_draft:
+            children: null
+            type: string
+        selected: false
+        title: Map JSON Resume
+        type: code
+        variables:
+        - value_selector:
+          - redact
+          - redacted_ssot
+          variable: redacted_ssot
+        - value_selector:
+          - parse_evidence
+          - evidence_json
+          variable: evidence_json
+        - value_selector:
+          - parse_reqs
+          - requirements_json
+          variable: requirements_json
+      height: 88
+      id: map_json_resume
+      position:
+        x: 1500
+        y: 540
+      positionAbsolute:
+        x: 1500
         y: 540
       selected: false
       sourcePosition: right
